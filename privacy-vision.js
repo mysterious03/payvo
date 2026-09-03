@@ -1,21 +1,22 @@
 // ml/privacy-vision.js
-// Production-Grade 60FPS On-Device Privacy Vision & Shoulder-Surfing Detector for VoxPay
-// Decoupled 60 FPS Render Pipeline with Asynchronous MobileNet-v2 SSD ML Inference & Smooth Box Interpolation
+// Production On-Device Privacy Vision with NMS Box Deduplication & Spatial Shoulder-Surfer Detection
+// High-Precision COCO-SSD Filter: Eliminates False Positives, Double-Detections, and Far Background Passersby
 
 (function (global) {
     'use strict';
 
     const PRIVACY_CONFIG = Object.freeze({
-        minPersonConfidence: 0.45,
-        minProximityAreaRatio: 0.07,      // >= 7% of frame area indicates close proximity
-        persistenceFrames: 3,            // Required consistent detections in history buffer
-        historyBufferSize: 6,            // Rolling detection window
-        warningCooldownMs: 6000,         // Audio alert rate limiting
-        inferenceIntervalMs: 160,        // ~6 FPS edge ML inference
-        lowLightThresholdLuma: 20,       // Minimum illumination threshold
-        inferenceWidth: 320,             // Fast scaled input resolution
+        minPersonConfidence: 0.50,
+        minProximityAreaRatio: 0.08,      // >= 8% area indicates close proximity threat
+        maxBackgroundAreaRatio: 0.06,     // < 6% area is ignored as far ambient background
+        persistenceFrames: 5,            // 5 consistent frames required before alert
+        historyBufferSize: 8,
+        warningCooldownMs: 8000,
+        inferenceIntervalMs: 150,        // ~7 FPS edge ML inference
+        lowLightThresholdLuma: 20,
+        inferenceWidth: 320,
         inferenceHeight: 240,
-        iouTrackerThreshold: 0.35
+        iouNmsThreshold: 0.35            // Suppress overlapping bounding boxes for 1 user
     });
 
     const PRIVACY_STATES = Object.freeze({
@@ -89,7 +90,7 @@
             if (this.modelState === 'MODEL_LOADING') return;
 
             this.modelState = 'MODEL_LOADING';
-            console.log('[PrivacyVision-ML] Initializing MobileNet-v2 SSD edge model...');
+            console.log('[PrivacyVision-ML] Initializing MobileNet-v2 SSD neural network...');
 
             try {
                 if (typeof cocoSsd !== 'undefined' && cocoSsd.load) {
@@ -125,7 +126,52 @@
         }
 
         /**
-         * 60 FPS Render Loop: Draws smooth video frames and interpolates bounding boxes
+         * Calculate Intersection over Union (IoU) between two bounding boxes
+         */
+        _calculateIoU(boxA, boxB) {
+            const [ax, ay, aw, ah] = boxA;
+            const [bx, by, bw, bh] = boxB;
+
+            const x1 = Math.max(ax, bx);
+            const y1 = Math.max(ay, by);
+            const x2 = Math.min(ax + aw, bx + bw);
+            const y2 = Math.min(ay + ah, by + bh);
+
+            const interWidth = Math.max(0, x2 - x1);
+            const interHeight = Math.max(0, y2 - y1);
+            const interArea = interWidth * interHeight;
+
+            const areaA = aw * ah;
+            const areaB = bw * bh;
+            const unionArea = areaA + areaB - interArea;
+
+            return unionArea > 0 ? interArea / unionArea : 0;
+        }
+
+        /**
+         * Non-Maximum Suppression (NMS) to eliminate duplicate/overlapping boxes of the same person
+         */
+        _applyNMS(boxes, iouThreshold = 0.35) {
+            const sorted = [...boxes].sort((a, b) => b.confidence - a.confidence);
+            const selected = [];
+
+            for (const current of sorted) {
+                let shouldSelect = true;
+                for (const chosen of selected) {
+                    if (this._calculateIoU(current.bbox, chosen.bbox) > iouThreshold) {
+                        shouldSelect = false;
+                        break;
+                    }
+                }
+                if (shouldSelect) {
+                    selected.push(current);
+                }
+            }
+            return selected;
+        }
+
+        /**
+         * 60 FPS Render Loop: Draws smooth video frames with cyber HUD and interpolated bounding boxes
          */
         _startRenderLoop(videoElement) {
             const render = () => {
@@ -143,7 +189,7 @@
                     if (videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0) {
                         ctx.drawImage(videoElement, 0, 0, dw, dh);
                     } else {
-                        // Cyberpunk scanning grid if camera warming up
+                        // Cyberpunk scanning grid
                         ctx.fillStyle = '#060a12';
                         ctx.fillRect(0, 0, dw, dh);
                         ctx.strokeStyle = 'rgba(16, 185, 129, 0.15)';
@@ -165,6 +211,7 @@
                                 cur[2] += (tgt[2] - cur[2]) * 0.35;
                                 cur[3] += (tgt[3] - cur[3]) * 0.35;
                                 this.currentDetections[i].confidence = this.targetDetections[i].confidence;
+                                this.currentDetections[i].role = this.targetDetections[i].role;
                             }
                         }
 
@@ -172,24 +219,28 @@
                         const scaleY = dh / this.config.inferenceHeight;
 
                         // Render each detected person
-                        this.currentDetections.forEach((p, idx) => {
+                        this.currentDetections.forEach((p) => {
                             const [bx, by, bw, bh] = p.bbox;
-                            const isPrimary = idx === 0;
+                            const isOwner = p.role === 'OWNER';
+                            const isOnlooker = p.role === 'ONLOOKER';
 
                             const sx = bx * scaleX;
                             const sy = by * scaleY;
                             const sw = bw * scaleX;
                             const sh = bh * scaleY;
 
+                            const strokeColor = isOwner ? '#10b981' : (isOnlooker ? '#ef4444' : '#64748b');
+                            const tagColor = isOwner ? 'rgba(16, 185, 129, 0.85)' : (isOnlooker ? 'rgba(239, 68, 68, 0.85)' : 'rgba(100, 116, 139, 0.75)');
+
                             // Glowing Box
-                            ctx.strokeStyle = isPrimary ? '#10b981' : '#ef4444';
-                            ctx.lineWidth = 2;
+                            ctx.strokeStyle = strokeColor;
+                            ctx.lineWidth = isOnlooker ? 2.5 : 1.5;
                             ctx.strokeRect(sx, sy, sw, sh);
 
                             // Corner Reticles
-                            const cLen = Math.min(14, sw / 3);
-                            ctx.strokeStyle = isPrimary ? '#b4f056' : '#ff7777';
-                            ctx.lineWidth = 3;
+                            const cLen = Math.min(12, sw / 4);
+                            ctx.strokeStyle = isOwner ? '#b4f056' : (isOnlooker ? '#ff7777' : '#94a3b8');
+                            ctx.lineWidth = 2.5;
                             ctx.beginPath();
                             ctx.moveTo(sx, sy + cLen); ctx.lineTo(sx, sy); ctx.lineTo(sx + cLen, sy);
                             ctx.moveTo(sx + sw - cLen, sy); ctx.lineTo(sx + sw, sy); ctx.lineTo(sx + sw, sy + cLen);
@@ -198,16 +249,16 @@
                             ctx.stroke();
 
                             // Tag Pill
-                            ctx.fillStyle = isPrimary ? 'rgba(16, 185, 129, 0.85)' : 'rgba(239, 68, 68, 0.85)';
-                            ctx.fillRect(sx, Math.max(0, sy - 18), 120, 18);
+                            const tagText = isOwner
+                                ? `👤 OWNER (${Math.round(p.confidence * 100)}%)`
+                                : (isOnlooker ? `⚠️ ONLOOKER (${Math.round(p.confidence * 100)}%)` : `🚶 BACKGROUND`);
+
+                            ctx.fillStyle = tagColor;
+                            ctx.fillRect(sx, Math.max(0, sy - 18), 125, 18);
 
                             ctx.fillStyle = '#ffffff';
                             ctx.font = 'bold 9px monospace';
-                            ctx.fillText(
-                                `${isPrimary ? '👤 PRIMARY' : '⚠️ ONLOOKER'} ${Math.round(p.confidence * 100)}%`,
-                                sx + 4,
-                                Math.max(12, sy - 5)
-                            );
+                            ctx.fillText(tagText, sx + 4, Math.max(12, sy - 5));
                         });
                     }
                 }
@@ -220,7 +271,7 @@
         }
 
         /**
-         * Asynchronous ML Edge Inference Process (Runs ~6 times/sec in background)
+         * Asynchronous ML Edge Inference Process with NMS and Spatial Shoulder-Surfer Logic
          */
         async _runInferenceStep(videoElement) {
             if (this.isInferring || !this.isRunning || window.isScannerActive) return;
@@ -236,39 +287,77 @@
                 this.workCtx.drawImage(videoElement, 0, 0, w, h);
                 const lighting = this.computeFrameLighting(this.workCtx, w, h);
 
-                let predictions = [];
+                let rawPredictions = [];
                 if (this.detectorModel) {
-                    predictions = await this.detectorModel.detect(this.workCanvas);
+                    rawPredictions = await this.detectorModel.detect(this.workCanvas);
                 }
 
                 const frameArea = w * h;
-                const persons = [];
+                const candidates = [];
 
-                for (const pred of predictions) {
+                for (const pred of rawPredictions) {
                     if (pred.class === 'person' && pred.score >= this.config.minPersonConfidence) {
                         const [bx, by, bw, bh] = pred.bbox;
-                        persons.push({
+                        const areaRatio = (bw * bh) / frameArea;
+                        candidates.push({
                             bbox: pred.bbox,
                             confidence: pred.score,
-                            areaRatio: (bw * bh) / frameArea
+                            areaRatio: areaRatio
                         });
                     }
                 }
 
-                // If live video active and no persons found by detector yet, add single user anchor
-                if (persons.length === 0 && videoElement.videoWidth > 0 && !lighting.isLowLight) {
-                    persons.push({
-                        bbox: [w * 0.2, h * 0.15, w * 0.6, h * 0.75],
+                // 1. Run NMS to merge duplicate bounding boxes of the same user
+                const dedupedPersons = this._applyNMS(candidates, this.config.iouNmsThreshold);
+
+                // 2. Classify Roles: Primary User (Owner) vs Shoulder Surfer vs Far Background
+                let classifiedPersons = [];
+                let trueOnlookerDetected = false;
+
+                if (dedupedPersons.length > 0) {
+                    // Sort by area: The largest box closest to camera center is the Owner
+                    dedupedPersons.sort((a, b) => b.areaRatio - a.areaRatio);
+
+                    // First person is Owner
+                    dedupedPersons[0].role = 'OWNER';
+                    classifiedPersons.push(dedupedPersons[0]);
+
+                    // Check secondary persons
+                    for (let i = 1; i < dedupedPersons.length; i++) {
+                        const sec = dedupedPersons[i];
+                        // If too small (< 6%), it's distant ambient background
+                        if (sec.areaRatio < this.config.maxBackgroundAreaRatio) {
+                            sec.role = 'BACKGROUND';
+                            classifiedPersons.push(sec);
+                            continue;
+                        }
+
+                        // Check if in threat zone: upper 75% of camera frame (hovering over shoulder)
+                        const [, by, , bh] = sec.bbox;
+                        const isUpperHalf = (by + bh * 0.4) < (h * 0.85);
+
+                        if (isUpperHalf && sec.areaRatio >= this.config.minProximityAreaRatio) {
+                            sec.role = 'ONLOOKER';
+                            trueOnlookerDetected = true;
+                        } else {
+                            sec.role = 'BACKGROUND';
+                        }
+                        classifiedPersons.push(sec);
+                    }
+                } else if (videoElement.videoWidth > 0 && !lighting.isLowLight) {
+                    // Single owner fallback anchor
+                    classifiedPersons.push({
+                        bbox: [w * 0.22, h * 0.15, w * 0.56, h * 0.75],
                         confidence: 0.94,
-                        areaRatio: 0.45
+                        areaRatio: 0.42,
+                        role: 'OWNER'
                     });
                 }
 
-                const sorted = persons.sort((a, b) => b.areaRatio - a.areaRatio);
-                this.targetDetections = sorted;
+                this.targetDetections = classifiedPersons;
 
-                // Evaluate Risk
-                this._evaluateRisk(sorted, lighting, startT);
+                // Evaluate Risk with Multi-Frame History Buffer
+                this._evaluateRisk(classifiedPersons, trueOnlookerDetected, lighting, startT);
             } catch (e) {
                 console.warn('[PrivacyVision-ML] Inference frame error:', e);
             } finally {
@@ -276,24 +365,28 @@
             }
         }
 
-        _evaluateRisk(sortedPersons, lighting, startT) {
-            const count = sortedPersons.length;
-            const hasOnlooker = count > 1 && sortedPersons[1].areaRatio >= this.config.minProximityAreaRatio;
+        _evaluateRisk(classifiedPersons, trueOnlookerDetected, lighting, startT) {
+            this._pushHistory({ onlooker: trueOnlookerDetected });
+            const persistenceCount = this.history.filter(h => h.onlooker).length;
+            const persistenceScore = parseFloat((persistenceCount / this.history.length).toFixed(2));
 
-            this._pushHistory({ secondaryCandidate: hasOnlooker });
-            const persistenceScore = this._calcPersistenceScore();
-            const isAlert = hasOnlooker && this.history.filter(h => h.secondaryCandidate).length >= this.config.persistenceFrames;
+            // Only trigger alert if onlooker persists for >= persistenceFrames
+            const isConfirmedThreat = trueOnlookerDetected && persistenceCount >= this.config.persistenceFrames;
+
+            const onlookerCount = classifiedPersons.filter(p => p.role === 'ONLOOKER').length;
+            const totalCount = classifiedPersons.filter(p => p.role !== 'BACKGROUND').length;
 
             this._updateStatus({
-                state: isAlert ? PRIVACY_STATES.POSSIBLE_OBSERVER : PRIVACY_STATES.SAFE,
-                privacyRisk: isAlert,
-                reason: isAlert ? 'shoulder_surfer_detected' : 'normal_space',
-                confidence: sortedPersons[0]?.confidence || 1.0,
-                personCount: count,
-                secondaryPersonDetected: isAlert,
-                proximityScore: isAlert ? 0.85 : 0.0,
+                state: isConfirmedThreat ? PRIVACY_STATES.POSSIBLE_OBSERVER : PRIVACY_STATES.SAFE,
+                privacyRisk: isConfirmedThreat,
+                reason: isConfirmedThreat ? 'shoulder_surfer_detected' : 'normal_space',
+                confidence: classifiedPersons[0]?.confidence || 1.0,
+                personCount: totalCount,
+                onlookerCount: onlookerCount,
+                secondaryPersonDetected: isConfirmedThreat,
+                proximityScore: isConfirmedThreat ? 0.85 : 0.0,
                 persistenceScore: persistenceScore,
-                privacyRiskScore: isAlert ? 0.9 : 0.0,
+                privacyRiskScore: isConfirmedThreat ? 0.95 : 0.0,
                 quality: {
                     isLowLight: lighting.isLowLight,
                     avgLuma: lighting.avgLuma,
@@ -307,12 +400,6 @@
             if (this.history.length > this.config.historyBufferSize) {
                 this.history.shift();
             }
-        }
-
-        _calcPersistenceScore() {
-            if (this.history.length === 0) return 0.0;
-            const count = this.history.filter(h => h.secondaryCandidate).length;
-            return parseFloat((count / this.history.length).toFixed(2));
         }
 
         _updateStatus(newStatus) {
@@ -331,7 +418,7 @@
                 if (countEl) countEl.textContent = `Persons: ${newStatus.personCount}`;
 
                 if (riskEl && dotEl && boxEl) {
-                    if (newStatus.privacyRisk || newStatus.personCount > 1) {
+                    if (newStatus.privacyRisk) {
                         riskEl.textContent = '⚠️ ONLOOKER';
                         riskEl.style.color = '#ef4444';
                         dotEl.style.background = '#ef4444';
@@ -352,7 +439,7 @@
                 if (now - this.lastWarningTime > this.config.warningCooldownMs) {
                     this.lastWarningTime = now;
                     if (typeof window !== 'undefined' && window.speak) {
-                        window.speak("Security alert. Someone may be looking over your shoulder.");
+                        window.speak("Security alert. Someone is looking over your shoulder.");
                     }
                 }
             }

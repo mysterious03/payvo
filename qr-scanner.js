@@ -1,8 +1,13 @@
-// qr-scanner.js - 60 FPS Continuous QR Scanner with Local jsQR Engine & Camera Arbitration
+// qr-scanner.js - High-Precision Multi-Engine 60 FPS QR Scanner for VoxPay
+// Native BarcodeDetector + Uncompressed jsQR ROI Decoder + Single-Stream Arbitration
+
 let isScanning = false;
 let scanAnimationId = null;
-let scanStartTime = Date.now();
 window.isScannerActive = false;
+
+// Offscreen dedicated canvas for uncompressed 1:1 pixel decoding
+let offscreenCanvas = null;
+let offscreenCtx = null;
 
 window.startScanner = function () {
     window.isScannerActive = true;
@@ -12,9 +17,14 @@ window.startScanner = function () {
 
     if (!video || !canvas) return;
 
-    // 1. Yield camera from Privacy Vision
+    // 1. Yield camera from Privacy Vision to avoid single-webcam stream lock
     if (typeof privacyVision !== 'undefined' && privacyVision.stop) {
         privacyVision.stop();
+    }
+
+    if (!offscreenCanvas) {
+        offscreenCanvas = document.createElement('canvas');
+        offscreenCtx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
     }
 
     video.muted = true;
@@ -22,7 +32,7 @@ window.startScanner = function () {
     video.setAttribute('autoplay', 'true');
 
     if (statusEl) {
-        statusEl.textContent = '🔍 Align QR code inside the frame';
+        statusEl.textContent = '🔍 Align QR code inside viewfinder';
         statusEl.style.color = '#b4f056';
     }
 
@@ -31,19 +41,19 @@ window.startScanner = function () {
         window.displayTestQR('upi://pay?pa=freshmart@icici&pn=FreshMart%20Store&am=499.00&cu=INR&tn=Groceries', 'FreshMart ₹499');
     }
 
-    if (window.speak) window.speak("Scanner opened. Align QR code inside the frame.");
+    if (window.speak) window.speak("Scanner opened. Hold QR code in front of camera.");
 
     const onStreamReady = (stream) => {
         isScanning = true;
         video.srcObject = stream;
         video.play().catch(e => console.warn('Video play error:', e));
-        start60FpsScanLoop(video, canvas, statusEl);
+        startScanLoop(video, canvas, statusEl);
     };
 
-    // Camera Acquisition with Progressive Fallbacks
+    // Camera Acquisition with Progressive Constraints
     const tryGetUserMedia = async () => {
         const attempts = [
-            { video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
+            { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
             { video: { facingMode: 'environment' }, audio: false },
             { video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
             { video: true, audio: false }
@@ -61,47 +71,52 @@ window.startScanner = function () {
             }
         }
 
-        // If camera unavailable, still run interactive canvas loop
+        // Canvas fallback mode if webcam permissions denied
         isScanning = true;
-        start60FpsScanLoop(video, canvas, statusEl);
+        startScanLoop(video, canvas, statusEl);
     };
 
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         tryGetUserMedia();
     } else {
         isScanning = true;
-        start60FpsScanLoop(video, canvas, statusEl);
+        startScanLoop(video, canvas, statusEl);
     }
 };
 
 /**
- * 60 FPS Scan & Visual Laser Animation Loop
+ * 60 FPS Viewfinder Animation + Multi-Engine QR Decoder
  */
-function start60FpsScanLoop(video, canvas, statusEl) {
+function startScanLoop(video, canvas, statusEl) {
     const ctx = canvas.getContext('2d');
-    const useBarcodeDetector = ('BarcodeDetector' in window);
-    let detector = null;
+    const hasBarcodeDetector = ('BarcodeDetector' in window);
+    let nativeDetector = null;
 
-    if (useBarcodeDetector) {
-        try { detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { detector = null; }
+    if (hasBarcodeDetector) {
+        try { nativeDetector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { nativeDetector = null; }
     }
 
     canvas.style.display = 'block';
     let frameCount = 0;
+    let isDecoding = false;
 
     const loop = async () => {
         if (!isScanning || !window.isScannerActive) return;
 
         const cw = canvas.parentElement ? canvas.parentElement.clientWidth : 320;
         const ch = canvas.parentElement ? canvas.parentElement.clientHeight : 320;
-        canvas.width = cw;
-        canvas.height = ch;
 
-        // 1. Draw live camera frame if ready
-        if (video && video.readyState >= 2 && video.videoWidth > 0) {
+        if (canvas.width !== cw || canvas.height !== ch) {
+            canvas.width = cw;
+            canvas.height = ch;
+        }
+
+        const hasLiveVideo = video && video.readyState >= 2 && video.videoWidth > 0;
+
+        // 1. Draw Viewfinder
+        if (hasLiveVideo) {
             ctx.drawImage(video, 0, 0, cw, ch);
         } else {
-            // High-tech scanning grid background if camera connecting
             ctx.fillStyle = '#0a0e1a';
             ctx.fillRect(0, 0, cw, ch);
             ctx.strokeStyle = 'rgba(180, 240, 86, 0.1)';
@@ -110,15 +125,15 @@ function start60FpsScanLoop(video, canvas, statusEl) {
             for (let y = 0; y < ch; y += 25) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke(); }
         }
 
-        // 2. Render Animated Neon Green Laser Sweep
+        // 2. Animated Laser Sweep
         const now = Date.now();
-        const laserY = ((now % 2200) / 2200) * ch;
-        const grad = ctx.createLinearGradient(0, laserY - 15, 0, laserY + 15);
+        const laserY = ((now % 2000) / 2000) * ch;
+        const grad = ctx.createLinearGradient(0, laserY - 14, 0, laserY + 14);
         grad.addColorStop(0, 'rgba(180, 240, 86, 0)');
         grad.addColorStop(0.5, 'rgba(180, 240, 86, 0.85)');
         grad.addColorStop(1, 'rgba(180, 240, 86, 0)');
         ctx.fillStyle = grad;
-        ctx.fillRect(0, laserY - 15, cw, 30);
+        ctx.fillRect(0, laserY - 14, cw, 28);
 
         ctx.strokeStyle = '#b4f056';
         ctx.lineWidth = 2;
@@ -127,33 +142,59 @@ function start60FpsScanLoop(video, canvas, statusEl) {
         ctx.lineTo(cw, laserY);
         ctx.stroke();
 
-        // 3. Scan QR Code every 3 frames (~20 scans/sec)
+        // 3. Multi-Engine QR Decode (~15 scans per second)
         frameCount++;
-        if (frameCount % 3 === 0 && typeof jsQR !== 'undefined') {
-            try {
-                const imgData = ctx.getImageData(0, 0, cw, ch);
-                const code = jsQR(imgData.data, imgData.width, imgData.height, {
-                    inversionAttempts: 'attemptBoth'
-                });
+        if (hasLiveVideo && frameCount % 2 === 0 && !isDecoding) {
+            isDecoding = true;
 
-                if (code && code.data && code.data.trim()) {
-                    // Draw highlight around detected QR
-                    if (code.location) {
-                        ctx.strokeStyle = '#10b981';
-                        ctx.lineWidth = 4;
-                        ctx.beginPath();
-                        ctx.moveTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
-                        ctx.lineTo(code.location.topRightCorner.x, code.location.topRightCorner.y);
-                        ctx.lineTo(code.location.bottomRightCorner.x, code.location.bottomRightCorner.y);
-                        ctx.lineTo(code.location.bottomLeftCorner.x, code.location.bottomLeftCorner.y);
-                        ctx.closePath();
-                        ctx.stroke();
+            try {
+                // Method A: Native BarcodeDetector (Ultra-Fast Hardware Path)
+                if (nativeDetector) {
+                    const barcodes = await nativeDetector.detect(video);
+                    if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                        onScanSuccess(barcodes[0].rawValue, statusEl);
+                        isDecoding = false;
+                        return;
+                    }
+                }
+
+                // Method B: High-Resolution Native Aspect jsQR
+                if (typeof jsQR !== 'undefined' && offscreenCanvas && offscreenCtx) {
+                    const vw = video.videoWidth;
+                    const vh = video.videoHeight;
+                    offscreenCanvas.width = vw;
+                    offscreenCanvas.height = vh;
+                    offscreenCtx.drawImage(video, 0, 0, vw, vh);
+
+                    const fullImgData = offscreenCtx.getImageData(0, 0, vw, vh);
+                    let code = jsQR(fullImgData.data, fullImgData.width, fullImgData.height, {
+                        inversionAttempts: 'attemptBoth'
+                    });
+
+                    // Method C: Center ROI 60% Crop (Where user aligns the QR)
+                    if (!code) {
+                        const cropW = Math.round(vw * 0.65);
+                        const cropH = Math.round(vh * 0.65);
+                        const cropX = Math.round((vw - cropW) / 2);
+                        const cropY = Math.round((vh - cropH) / 2);
+                        const roiData = offscreenCtx.getImageData(cropX, cropY, cropW, cropH);
+
+                        code = jsQR(roiData.data, roiData.width, roiData.height, {
+                            inversionAttempts: 'attemptBoth'
+                        });
                     }
 
-                    onScanSuccess(code.data, statusEl);
-                    return;
+                    if (code && code.data && code.data.trim()) {
+                        onScanSuccess(code.data, statusEl);
+                        isDecoding = false;
+                        return;
+                    }
                 }
-            } catch (e) {}
+            } catch (err) {
+                // Ignore transient frame read errors
+            } finally {
+                isDecoding = false;
+            }
         }
 
         scanAnimationId = requestAnimationFrame(loop);
@@ -239,7 +280,7 @@ function onScanSuccess(decodedText, statusEl) {
         if (typeof window.setupPaymentScreen === 'function') {
             window.setupPaymentScreen(true);
         }
-    }, 250);
+    }, 200);
 }
 
 // Dev bypass & Upload handling
@@ -330,6 +371,6 @@ window.displayTestQR = function (upiUri, title) {
         }
         setTimeout(() => {
             onScanSuccess(upiUri, statusEl);
-        }, 200);
+        }, 150);
     };
 };
