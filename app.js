@@ -310,24 +310,54 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Subscribe to Privacy Vision live status events
+        let isBlurSuppressed = false;
+        let suppressTimer = null;
+
+        window.dismissPrivacyBlur = function () {
+            isBlurSuppressed = true;
+            const curtain = document.getElementById('privacy-blur-curtain');
+            if (curtain) curtain.classList.remove('active');
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('privacy-blurred-content'));
+
+            if (suppressTimer) clearTimeout(suppressTimer);
+            suppressTimer = setTimeout(() => {
+                isBlurSuppressed = false;
+            }, 15000); // 15s temporary dismissal
+        };
+
         if (typeof privacyVision !== 'undefined' && privacyVision.addListener) {
             privacyVision.addListener((status) => {
                 const b = document.getElementById('privacy-live-badge');
-                if (!b) return;
-                if (status.privacyRisk || status.secondaryPersonDetected || status.personCount > 1) {
-                    b.style.borderColor = '#ef4444';
-                    b.style.color = '#ef4444';
-                    b.innerHTML = `
-                        <span style="width:8px; height:8px; border-radius:50%; background:#ef4444; animation:pulse-glow 0.8s infinite;"></span>
-                        <span>⚠️ Shoulder Surfer Detected! (${status.personCount} people)</span>
-                    `;
-                } else {
-                    b.style.borderColor = 'rgba(16, 185, 129, 0.4)';
-                    b.style.color = '#10b981';
-                    b.innerHTML = `
-                        <span style="width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
-                        <span>🛡️ Privacy Shield: Safe (No onlookers)</span>
-                    `;
+                const curtain = document.getElementById('privacy-blur-curtain');
+                const activeScreen = document.querySelector('.screen.active');
+
+                const isOnlookerPresent = status.privacyRisk || status.secondaryPersonDetected || status.personCount > 1;
+
+                if (b) {
+                    if (isOnlookerPresent) {
+                        b.style.borderColor = '#ef4444';
+                        b.style.color = '#ef4444';
+                        b.innerHTML = `
+                            <span style="width:8px; height:8px; border-radius:50%; background:#ef4444; animation:pulse-glow 0.8s infinite;"></span>
+                            <span>⚠️ Shoulder Surfer Detected! (${status.personCount} people)</span>
+                        `;
+                    } else {
+                        b.style.borderColor = 'rgba(16, 185, 129, 0.4)';
+                        b.style.color = '#10b981';
+                        b.innerHTML = `
+                            <span style="width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
+                            <span>🛡️ Privacy Shield: Safe (No onlookers)</span>
+                        `;
+                    }
+                }
+
+                // Activate Frosted Glass Content Blur & Shield Curtain
+                if (isOnlookerPresent && !isBlurSuppressed) {
+                    if (curtain) curtain.classList.add('active');
+                    if (activeScreen) activeScreen.classList.add('privacy-blurred-content');
+                } else if (!isOnlookerPresent) {
+                    if (curtain) curtain.classList.remove('active');
+                    if (activeScreen) activeScreen.classList.remove('privacy-blurred-content');
                 }
             });
         }

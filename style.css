@@ -937,3 +937,86 @@ body {
 .mt-24 { margin-top: 24px; }
 .mt-auto { margin-top: auto; }
 .mb-0 { margin-bottom: 0; }
+
+/* ========================================================= */
+/*   ON-DEVICE PRIVACY SHIELD: FROSTED GLASS CONTENT BLUR   */
+/* ========================================================= */
+.privacy-blurred-content {
+    filter: blur(20px) brightness(0.65) !important;
+    transition: filter 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s ease !important;
+    pointer-events: none !important;
+    user-select: none !important;
+}
+
+#privacy-blur-curtain {
+    position: absolute;
+    inset: 0;
+    z-index: 99990;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 24px;
+    background: rgba(7, 9, 14, 0.88);
+    backdrop-filter: blur(28px) saturate(200%);
+    -webkit-backdrop-filter: blur(28px) saturate(200%);
+    border-radius: var(--radius-screen);
+    text-align: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#privacy-blur-curtain.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.privacy-shield-icon-pulse {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.15);
+    border: 2px solid #ef4444;
+    box-shadow: 0 0 35px rgba(239, 68, 68, 0.4), inset 0 0 20px rgba(239, 68, 68, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 38px;
+    margin-bottom: 20px;
+    animation: pulse-glow 1.2s infinite;
+}
+
+.privacy-shield-title {
+    font-size: 20px;
+    font-weight: 900;
+    color: #ff4d4d;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+}
+
+.privacy-shield-desc {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.75);
+    line-height: 1.5;
+    margin-bottom: 24px;
+    max-width: 280px;
+}
+
+.privacy-dismiss-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 50px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.privacy-dismiss-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: #fff;
+}

@@ -687,8 +687,22 @@
                 ❌ Wrong PIN. Try again.</div>
         </section>
 
-
-
+        <!-- Dynamic Onlooker Privacy Blur Curtain -->
+        <div id="privacy-blur-curtain">
+            <div class="privacy-shield-icon-pulse">🛡️</div>
+            <h2 class="privacy-shield-title">Screen Obscured</h2>
+            <p class="privacy-shield-desc">
+                Nearby onlooker detected behind you. Your balance, PIN, and sensitive payment details have been blurred to prevent shoulder-surfing.
+            </p>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <button class="privacy-dismiss-btn" onclick="window.dismissPrivacyBlur()">
+                    I'm in a safe spot (Unblur)
+                </button>
+            </div>
+            <p style="font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 14px; font-family: monospace;">
+                ✓ Auto-unblurs when onlooker steps away
+            </p>
+        </div>
 
     </div>
 
