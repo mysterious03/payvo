@@ -17,6 +17,9 @@
     <script src="smart-qr-parser.js"></script>
     <script src="speaker-verification.js"></script>
     <script src="transaction-state-machine.js"></script>
+    <script src="mock-bank.js"></script>
+    <script src="groq-service.js"></script>
+    <script src="sarvam-voice.js"></script>
 
     <style>
         :root {
@@ -754,7 +757,9 @@
 
             <div class="demo-playground">
                 <div class="demo-tabs">
-                    <button class="demo-tab-btn active" onclick="switchDemoTab('qr-demo')">⚡ Smart QR Parser Demo</button>
+                    <button class="demo-tab-btn active" onclick="switchDemoTab('qr-demo')">⚡ Smart QR Parser</button>
+                    <button class="demo-tab-btn" onclick="switchDemoTab('bank-demo')">🏦 Mock Core Banking & UPI Switch</button>
+                    <button class="demo-tab-btn" onclick="switchDemoTab('groq-demo')">🧠 Groq AI Intent Parser</button>
                     <button class="demo-tab-btn" onclick="switchDemoTab('sm-demo')">🔒 State Machine Stepper</button>
                     <button class="demo-tab-btn" onclick="switchDemoTab('vad-demo')">👤 Voice Biometrics Info</button>
                 </div>
@@ -780,7 +785,57 @@
                     <div id="demo-qr-output" class="output-box">// Output will appear here...</div>
                 </div>
 
-                <!-- Tab 2: State Machine Visualizer -->
+                <!-- Tab 2: Mock Core Banking & UPI Switch -->
+                <div id="bank-demo" class="demo-panel">
+                    <p style="color: var(--text-muted); margin-bottom: 20px;">
+                        The integrated <b>Mock CBS (Core Banking System)</b> manages realistic bank accounts (HDFC, SBI, ICICI, Axis), NPCI VPA directory resolution, and 12-digit UTR settlement generation.
+                    </p>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                        <div>
+                            <label class="demo-label">Beneficiary VPA / UPI ID:</label>
+                            <input type="text" id="bank-demo-vpa" class="demo-input" value="ramesh@upi">
+                        </div>
+                        <div>
+                            <label class="demo-label">Transfer Amount (₹ INR):</label>
+                            <input type="number" id="bank-demo-amount" class="demo-input" value="250">
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                        <button class="btn-action" onclick="runBankLookup()">Verify VPA in Directory</button>
+                        <button class="btn-action" style="background: var(--accent-lime);" onclick="runBankTransfer()">Simulate UPI Transfer & Get UTR</button>
+                        <button class="btn-secondary" onclick="runViewAccounts()">View All Mock Accounts</button>
+                    </div>
+
+                    <div id="bank-demo-output" class="output-box">// Banking switch response will appear here...</div>
+                </div>
+
+                <!-- Tab 3: Groq AI Intent Parser -->
+                <div id="groq-demo" class="demo-panel">
+                    <p style="color: var(--text-muted); margin-bottom: 20px;">
+                        Powered by <b>Groq Cloud</b> ultra-fast LLM inference, conversational speech commands are instantly parsed into structured payment entities.
+                    </p>
+
+                    <div class="demo-input-group">
+                        <label class="demo-label">Voice Prompt / Speech Transcript:</label>
+                        <input type="text" id="groq-demo-input" class="demo-input" 
+                            value="Send 500 rupees to Ramesh for groceries">
+                        
+                        <div class="sample-chips">
+                            <span class="sample-chip" onclick="setGroqPrompt('Send 500 rupees to Ramesh for groceries')">"Send 500 rupees to Ramesh for groceries"</span>
+                            <span class="sample-chip" onclick="setGroqPrompt('Pay 1200 to FreshMart for dinner bill')">"Pay 1200 to FreshMart for dinner bill"</span>
+                            <span class="sample-chip" onclick="setGroqPrompt('Transfer 300 to Priya')">"Transfer 300 to Priya"</span>
+                            <span class="sample-chip" onclick="setGroqPrompt('Check my account balance')">"Check my account balance"</span>
+                        </div>
+                    </div>
+
+                    <button class="btn-action" onclick="runGroqParsing()">Parse Voice Intent via Groq AI</button>
+
+                    <div id="groq-demo-output" class="output-box">// Groq AI parsed JSON will appear here...</div>
+                </div>
+
+                <!-- Tab 4: State Machine Visualizer -->
                 <div id="sm-demo" class="demo-panel">
                     <p style="color: var(--text-muted); margin-bottom: 20px;">
                         The VoxPay transaction state machine enforces monotonic safety across 17 stages. Step through a simulated payment lifecycle below:
@@ -798,7 +853,7 @@
                     <div id="sm-output" class="output-box">// State details will appear here...</div>
                 </div>
 
-                <!-- Tab 3: Voice Biometrics Info -->
+                <!-- Tab 5: Voice Biometrics Info -->
                 <div id="vad-demo" class="demo-panel">
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
                         <div style="background: rgba(0,0,0,0.4); padding: 20px; border-radius: 14px; border: 1px solid var(--border-subtle);">
@@ -902,6 +957,73 @@
         window.addEventListener('DOMContentLoaded', () => {
             runQRDetection();
         });
+
+        // Bank Demo Interactions
+        async function runBankLookup() {
+            const vpa = document.getElementById('bank-demo-vpa').value;
+            const out = document.getElementById('bank-demo-output');
+            out.textContent = 'Querying NPCI VPA Directory...';
+            if (typeof mockBank !== 'undefined') {
+                const res = await mockBank.verifyVpa(vpa);
+                out.textContent = JSON.stringify(res, null, 2);
+                out.style.color = res.valid ? '#34d399' : '#f87171';
+            } else {
+                out.textContent = 'MockBank module not loaded.';
+            }
+        }
+
+        async function runBankTransfer() {
+            const vpa = document.getElementById('bank-demo-vpa').value;
+            const amount = document.getElementById('bank-demo-amount').value;
+            const out = document.getElementById('bank-demo-output');
+            out.textContent = `Processing Core Banking transfer of ₹${amount} to ${vpa}...`;
+            if (typeof mockBank !== 'undefined') {
+                const res = await mockBank.processTransfer({
+                    fromVpa: 'suriya@swiftpass',
+                    toVpa: vpa,
+                    amount: amount,
+                    note: 'Showcase Demo Transfer'
+                });
+                out.textContent = JSON.stringify(res, null, 2);
+                out.style.color = res.success ? '#34d399' : '#f87171';
+            } else {
+                out.textContent = 'MockBank module not loaded.';
+            }
+        }
+
+        function runViewAccounts() {
+            const out = document.getElementById('bank-demo-output');
+            if (typeof mockBank !== 'undefined' && mockBank.accounts) {
+                out.textContent = JSON.stringify(mockBank.accounts, null, 2);
+                out.style.color = '#38bdf8';
+            }
+        }
+
+        // Groq AI Demo Interactions
+        function setGroqPrompt(text) {
+            document.getElementById('groq-demo-input').value = text;
+            runGroqParsing();
+        }
+
+        async function runGroqParsing() {
+            const prompt = document.getElementById('groq-demo-input').value;
+            const out = document.getElementById('groq-demo-output');
+            out.textContent = 'Sending prompt to Groq Cloud LLM (qwen/qwen3.6-27b)...';
+            out.style.color = '#e2e8f0';
+
+            if (typeof groqService !== 'undefined' && groqService.parseVoiceIntent) {
+                const res = await groqService.parseVoiceIntent(prompt);
+                if (res) {
+                    out.textContent = JSON.stringify(res, null, 2);
+                    out.style.color = '#34d399';
+                } else {
+                    out.textContent = '// Failed to parse or offline. Check network connection.';
+                    out.style.color = '#f87171';
+                }
+            } else {
+                out.textContent = 'GroqService module not loaded.';
+            }
+        }
 
         // State Machine Stepper Demo
         const smSequence = [

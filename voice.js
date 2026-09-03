@@ -3,7 +3,7 @@ let speechRec = null;
 let isVoiceEnabled = false;
 let voicesLoaded = false;
 let yesListener = null; // dedicated one-shot recognition for confirmations
-const MURF_API_KEY = localStorage.getItem('MURF_API_KEY') || 'ap2_f00bf45c-835b-4e69-b4a1-9a08d5bc8390'; // Use provided key or fallback to localStorage
+const MURF_API_KEY = (typeof localStorage !== 'undefined' && localStorage.getItem('MURF_API_KEY')) || '';
 const MURF_VOICE_ID = 'en-US-marcus'; // Default professional voice
 let isDedicatedListening = false; // Flag to prevent main speechRec from stealing focus
 
@@ -154,13 +154,17 @@ window.speak = async function (text, onEndCallback = null) {
         return;
     }
 
-    // Try Murf AI first if key exists
-    if (MURF_API_KEY) {
-        const success = await speakWithMurf(text, onEndCallback);
-        if (success) return;
+    // Try Sarvam AI first for natural Indian voice
+    if (typeof sarvamVoice !== 'undefined' && sarvamVoice.speak) {
+        try {
+            await sarvamVoice.speak(text, onEndCallback);
+            return;
+        } catch (e) {
+            console.warn('[voice.js] Sarvam speech failed, falling back:', e);
+        }
     }
 
-    // Fallback to native
+    // Fallback to Native Speech
     window.speakNative(text, onEndCallback);
 };
 
