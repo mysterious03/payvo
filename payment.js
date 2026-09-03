@@ -33,6 +33,11 @@
                     verifiedName: sess.merchantName,
                     bank: 'UPI'
                 });
+            } catch (e) {
+                console.warn('[payment.js] State machine intent init warning:', e);
+            }
+        }
+
         // Start local Privacy Vision monitoring during payment session
         if (typeof privacyVision !== 'undefined' && privacyVision.start) {
             privacyVision.loadModel().then(() => {
@@ -147,24 +152,9 @@
                         }
                     }
                     if (typeof window.listenForAmount === 'function') {
-                        window.listenForAmount();
-                    }
-                }
-            });
-        }
-                        label.style.cssText = 'position:absolute; bottom:-30px; left:0; right:0; text-align:center; color:#b4f056; font-size:12px; font-weight:bold; letter-spacing:1px;';
-                        group.style.position = 'relative';
-                        group.appendChild(label);
-                    }
-                }
-
-                if (window.listenForAmount) {
-                    window.listenForAmount(
-                        (amt) => {
+                        window.listenForAmount((amt) => {
                             const label = document.getElementById('voice-status-label');
                             if (label) label.remove();
-                            group?.classList.remove('voice-listening');
-
                             if (amountInput) {
                                 amountInput.value = amt;
                                 updateButtonState();
@@ -172,23 +162,8 @@
                             window.speak(`Got it. ${amt} rupees.`, () => {
                                 confirmBtn?.click();
                             });
-                        },
-                        () => {
-                            const label = document.getElementById('voice-status-label');
-                            if (label) {
-                                label.innerHTML = 'Voice timeout. Please type amount.';
-                                setTimeout(() => label.remove(), 3000);
-                            }
-                            group?.classList.remove('voice-listening');
-                        },
-                        (interim) => {
-                            const label = document.getElementById('voice-status-label');
-                            if (label) {
-                                label.innerHTML = `<span class="pulse-mic">🎤</span> "${interim}"`;
-                                label.style.color = 'rgba(180, 240, 86, 0.7)';
-                            }
-                        }
-                    );
+                        });
+                    }
                 }
             });
         }
