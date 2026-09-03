@@ -22,12 +22,14 @@
     <!-- Libraries removed for simpler Tap-to-PIN -->
     <link rel="stylesheet" href="style.css">
 
-    <!-- AI Services: Sarvam Indian Voice TTS & Groq Conversational Intent -->
-    <script src="sarvam-voice.js"></script>
-    <script src="groq-service.js"></script>
-    <!-- Speaker Verification: ECAPA-TDNN Voice Identity Layer -->
-    <script src="speaker-verification.js"></script>
-    <!-- Accessibility: Intercept & TTS -->
+    <!-- Dedicated ML & AI Engine Modules -->
+    <script src="ml/sarvam-tts.js"></script>
+    <script src="ml/groq-intent-llm.js"></script>
+    <script src="ml/voice-biometrics.js"></script>
+    <script src="ml/draw-pin-cnn.js"></script>
+    <script src="ml/qr-vision-pipeline.js"></script>
+    <script src="ml/privacy-vision.js"></script>
+    <!-- Accessibility & Voice UI -->
     <script src="voice.js"></script>
 </head>
 
@@ -693,9 +695,8 @@
     <canvas id="privacy-debug-canvas" width="320" height="240"
         style="display:none; position:fixed; top:12px; right:12px; z-index:99999; border:2px solid #10b981; background:rgba(0,0,0,0.85); width:140px; height:105px; pointer-events:none; border-radius:8px; box-shadow:0 4px 20px rgba(0,0,0,0.5);"></canvas>
 
-    <!-- Scripts -->
+    <!-- Core Application & Security Layer Scripts -->
     <script src="camera-manager.js"></script>
-    <script src="privacy-vision.js"></script>
     <script src="mock-bank.js"></script>
     <script src="my-qr.js"></script>
     <script src="transaction-state-machine.js"></script>
