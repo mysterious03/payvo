@@ -426,13 +426,24 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // Voice Biometrics Studio Controller
-    document.getElementById('btn-enroll-voice')?.addEventListener('click', () => {
+    window.openVoiceStudio = function () {
         const modal = document.getElementById('voice-enroll-modal');
         if (modal) {
             modal.style.display = 'flex';
+            if (window.pauseVoiceAssistant) window.pauseVoiceAssistant();
             if (window.voiceStudio) window.voiceStudio._notifyUI();
         }
-    });
+    };
+
+    window.closeVoiceStudio = function () {
+        const modal = document.getElementById('voice-enroll-modal');
+        if (modal) {
+            modal.style.display = 'none';
+            if (window.resumeVoiceAssistant) window.resumeVoiceAssistant();
+        }
+    };
+
+    document.getElementById('btn-enroll-voice')?.addEventListener('click', window.openVoiceStudio);
 
     const recordBtn = document.getElementById('btn-studio-record');
     let recordTimer = null;

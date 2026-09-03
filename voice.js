@@ -525,6 +525,33 @@ window.updateVoiceHUD = function (state, text = '') {
     }
 };
 
+window.isAssistantPaused = false;
+
+window.pauseVoiceAssistant = function () {
+    window.isAssistantPaused = true;
+    window.stopSpeaking();
+    if (speechRec) {
+        try { speechRec.abort(); } catch (e) {}
+    }
+    const hud = document.getElementById('voice-hud-pill');
+    if (hud) {
+        hud.innerHTML = `
+            <span style="width:10px; height:10px; border-radius:50%; background:#94a3b8;"></span>
+            <span style="color:#94a3b8;">⏸️ Assistant Paused (Recording)</span>
+        `;
+    }
+};
+
+window.resumeVoiceAssistant = function () {
+    window.isAssistantPaused = false;
+    if (isVoiceEnabled && speechRec && !isDedicatedListening && !window.isAgentSpeaking) {
+        try { speechRec.start(); } catch (e) {}
+        if (typeof window.updateVoiceHUD === 'function') {
+            window.updateVoiceHUD('listening');
+        }
+    }
+};
+
 // Initialize Speech Recognition
 window.initVoiceAssistant = function () {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -552,6 +579,14 @@ window.initVoiceAssistant = function () {
 
     speechRec.onresult = (event) => {
         window.isUserSpeaking = false;
+
+        // Strictly ignore voice commands if assistant is paused or studio is active
+        const isStudioOpen = document.getElementById('voice-enroll-modal')?.style.display === 'flex';
+        if (window.isAssistantPaused || (window.voiceStudio && window.voiceStudio.isRecording) || isStudioOpen) {
+            console.log("[voice.js] Voice assistant is paused for studio recording. Command ignored.");
+            return;
+        }
+
         const last = event.results.length - 1;
         const command = event.results[last][0].transcript.toLowerCase().trim();
         console.log("Voice Command Recognized:", command);
@@ -570,7 +605,8 @@ window.initVoiceAssistant = function () {
     };
 
     speechRec.onend = () => {
-        if (isVoiceEnabled && !isDedicatedListening) {
+        const isStudioOpen = document.getElementById('voice-enroll-modal')?.style.display === 'flex';
+        if (isVoiceEnabled && !isDedicatedListening && !window.isAssistantPaused && !isStudioOpen && !(window.voiceStudio && window.voiceStudio.isRecording)) {
             try { speechRec.start(); } catch (e) { }
             if (typeof window.updateVoiceHUD === 'function') {
                 window.updateVoiceHUD('listening');
