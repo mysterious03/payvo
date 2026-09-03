@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SwiftPass Mock Payment App</title>
+    <!-- Premium Geometry Font: Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <!-- jsQR: tiny standalone library, no workers, no CORS issues -->
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <!-- TensorFlow.js for Draw-to-PIN & Privacy Vision -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+    <!-- COCO-SSD MobileNet model for on-device Person Detection -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+    <!-- Libraries removed for simpler Tap-to-PIN -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Speaker Verification: ECAPA-TDNN Voice Identity Layer -->
+    <script src="speaker-verification.js"></script>
+    <!-- Accessibility: Intercept & TTS -->
+    <script src="voice.js"></script>
+</head>
+
+<body>
+    <div id="app-container">
+
+        <!-- ======================= -->
+        <!--      HOME SCREEN        -->
+        <!-- ======================= -->
+        <section id="home-screen" class="screen active">
+            <!-- Header -->
+            <header class="dashboard-header">
+                <div class="user-info">
+                    <div class="user-avatar">SP</div>
+                    <div>
+                        <p class="greeting">Good Morning,</p>
+                        <h1 class="user-name">Suriya Prakash</h1>
+                    </div>
+                </div>
+                <button class="notification-btn" aria-label="Notifications" id="btn-profile">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" class="bell" stroke="currentColor"
+                        stroke-width="2">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- Accessibility Voice Toggle -->
+            <div style="padding: 0 24px; margin-top: 10px;">
+                <button id="voice-toggle-btn" onclick="window.initVoiceAssistant()"
+                    style="width: 100%; border-radius: 12px; padding: 16px; background: rgba(180, 240, 86, 0.1); border: 2px dashed #b4f056; color: #b4f056; font-weight: bold; font-size: 16px; text-transform: uppercase; cursor: pointer;">
+                    Enable Voice Assistant
+                </button>
+            </div>
+
+            <!-- Wallet Overview -->
+            <div class="wallet-overview">
+                <div class="wallet-card">
+                    <div class="wallet-top">
+                        <span class="wallet-label">Total Balance</span>
+                        <div class="brand-tag">swiftpass</div>
+                    </div>
+                    <h2 class="wallet-balance">₹1550<span class="decimals">.00</span></h2>
+                    <div class="wallet-actions">
+                        <button class="btn-wallet" id="btn-load-money">
+                            <span class="wallet-icon-circle">+</span> Load Money
+                        </button>
+                        <button class="btn-wallet" id="btn-bank-transfer">
+                            <span class="wallet-icon-circle">→</span> Transfer
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Services Grid -->
+            <div class="quick-services">
+                <h3 class="section-title">Quick Actions</h3>
+                <div class="services-grid">
+                    <button class="service-btn" id="btn-service-scan">
+                        <div class="service-icon text-accent"><svg width="24" height="24" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                <rect x="7" y="7" width="3" height="3"></rect>
+                                <rect x="14" y="7" width="3" height="3"></rect>
+                                <rect x="7" y="14" width="3" height="3"></rect>
+                                <rect x="14" y="14" width="3" height="3"></rect>
+                            </svg></div>
+                        <span>Scan & Pay</span>
+                    </button>
+                    <button class="service-btn" id="btn-service-contact">
+                        <div class="service-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <path
+                                    d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z">
+                                </path>
+                            </svg></div>
+                        <span>Pay Phone</span>
+                    </button>
+                    <button class="service-btn" id="btn-service-self">
+                        <div class="service-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect>
+                                <line x1="2" y1="10" x2="22" y2="10"></line>
+                            </svg></div>
+                        <span>Pay UPI ID</span>
+                    </button>
+                    <button class="service-btn" id="btn-invite">
+                        <div class="service-icon bg-blue-100"><span style="font-size: 20px;">🎁</span></div>
+                        <span>Invite & Earn</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Transactions List -->
+            <div class="transactions-container">
+                <div class="tx-header">
+                    <h3 class="section-title mb-0">Recent Activity</h3>
+                    <button class="btn-link text-accent">View All</button>
+                </div>
+                <ul id="transactions-list">
+                    <!-- Transactions injected by JS -->
+                </ul>
+            </div>
+        </section>
+
+        <!-- ======================= -->
+        <!--      SCAN SCREEN        -->
+        <!-- ======================= -->
+        <section id="scan-screen" class="screen bg-slate">
+            <header class="top-bar">
+                <button class="back-btn back-to-home" id="btn-scan-back">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+                <h1>Scan & Pay</h1>
+                <div style="width:24px;"></div> <!-- Spacer -->
+            </header>
+
+            <div class="scanner-container">
+                <p class="instruction">Align QR code inside the frame</p>
+
+                <!-- Custom Scanner: video + hidden canvas for detection -->
+                <div
+                    style="position:relative;width:100%;max-width:400px;aspect-ratio:1;border-radius:16px;overflow:hidden;background:#000;margin-top:16px;">
+                    <video id="qr-video" playsinline muted
+                        style="width:100%;height:100%;object-fit:cover;display:block;"></video>
+                    <canvas id="qr-canvas" style="display:none;"></canvas>
+                    <!-- Animated corner-bracket overlay -->
+                    <div style="position:absolute;inset:0;pointer-events:none;">
+                        <svg width="100%" height="100%" viewBox="0 0 200 200" fill="none" stroke="#b4f056"
+                            stroke-width="5" stroke-linecap="round">
+                            <path d="M30 10 L10 10 L10 30" />
+                            <path d="M170 10 L190 10 L190 30" />
+                            <path d="M10 170 L10 190 L30 190" />
+                            <path d="M190 170 L190 190 L170 190" />
+                        </svg>
+                    </div>
+                    <div id="scan-status"
+                        style="position:absolute;bottom:8px;left:0;right:0;text-align:center;color:#b4f056;font-size:12px;font-weight:bold;">
+                        🔍 Looking for QR code...</div>
+                </div>
+
+                <!-- ML Upload Bypass -->
+                <div class="w-full mt-24" style="text-align:center;">
+                    <p class="text-muted"
+                        style="font-size:12px; font-weight:bold; margin-bottom:8px; text-transform:uppercase;">
+                        Can't focus or camera blocked?
+                    </p>
+                    <input type="file" id="qr-upload" accept="image/*" style="display:none;" />
+                    <button class="btn-outline" onclick="document.getElementById('qr-upload').click()">
+                        Upload QR Image
+                    </button>
+                </div>
+
+                <!-- Fallback Button -->
+                <button class="btn-black fallback-btn" id="btn-simulate-scan" style="margin-top: 16px;">
+                    [Dev] Simulate Successful Scan
+                </button>
+            </div>
+        </section>
+
+        <!-- ======================= -->
+        <!--    PAYMENT SCREEN       -->
+        <!-- ======================= -->
+        <section id="payment-screen" class="screen bg-slate">
+            <!-- Fullscreen Loader -->
+            <div id="payment-loader" class="loader-overlay hidden">
+                <div class="spinner"></div>
+                <!-- Accessibility Note: ARIA live region active here -->
+                <h2 aria-live="assertive">Processing Payment...</h2>
+            </div>
+
+            <header class="top-bar">
+                <button class="back-btn back-to-home" id="btn-pay-back">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+                <h1>Send Money</h1>
+                <div style="width:24px;"></div>
+            </header>
+
+            <!-- Accessible Privacy Vision Status Indicator -->
+            <div style="padding: 6px 20px; text-align: center;">
+                <div id="privacy-status" role="status" aria-live="polite"
+                    style="display: inline-block; font-size: 11px; font-weight: 700; color: #10b981; background: rgba(255,255,255,0.05); padding: 4px 14px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1); letter-spacing: 0.5px;">
+                    ✓ Privacy check: Space secure
+                </div>
+            </div>
+
+            <div class="payment-content">
+                <div class="merchant-avatar" id="pay-merchant-initial">M</div>
+                <h2 class="merchant-name" id="pay-merchant-name">Unknown Merchant</h2>
+                <p class="merchant-upi" id="pay-merchant-upi">example@upi</p>
+
+                <div class="amount-input-group">
+                    <span class="currency-symbol">₹</span>
+                    <!-- Accessibility Note: Custom Voice/Gesture pin entry wraps this input -->
+                    <input type="number" id="pay-amount" placeholder="0" aria-label="Enter payment amount" autofocus>
+                </div>
+
+                <div class="balance-indicator">
+                    <div class="mini-card-icon">
+                        <div class="mini-chip"></div>
+                    </div>
+                    <div class="balance-details">
+                        <p class="balance-title">SwiftPass Balance</p>
+                        <p class="balance-avail">Available: ₹1550.00</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Undo Window Overlay -->
+            <div id="undo-overlay" class="loader-overlay hidden" style="background: rgba(10, 10, 15, 0.95); z-index: 990; flex-direction: column; gap: 16px; padding: 24px; text-align: center;">
+                <div style="font-size: 40px; animation: pulse-glow 1s infinite;">⏳</div>
+                <h2 id="undo-title" style="color: #b4f056; font-size: 20px; font-weight: 800; margin: 0;">Securing Payment in <span id="undo-countdown">3</span>s...</h2>
+                <p id="undo-details" style="color: rgba(255,255,255,0.7); font-size: 14px; margin: 0;">₹0 to Merchant</p>
+                <button id="btn-undo-cancel" style="margin-top: 12px; background: rgba(255, 77, 77, 0.15); border: 2px solid #ff4d4d; color: #ff4d4d; font-weight: 800; padding: 12px 28px; border-radius: 50px; font-size: 15px; cursor: pointer; letter-spacing: 0.5px;">
+                    ✕ CANCEL & UNDO
+                </button>
+            </div>
+
+            <div class="bottom-action">
+                <button class="btn-black full-width mt-auto" id="btn-pay-confirm">Pay Securely</button>
+            </div>
+        </section>
+
+        <!-- ======================= -->
+        <!--    SUCCESS SCREEN       -->
+        <!-- ======================= -->
+        <section id="success-screen" class="screen bg-slate">
+            <div class="success-content">
+                <div class="success-icon-container">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <!-- Accessibility Note: Auto audio cue "Payment of X rupees successful" -->
+                <h1 class="success-title" aria-live="assertive">Payment confirmed</h1>
+                <p class="success-desc">Your card will be dispatched within 72 hours.</p>
+
+                <div class="receipt-card">
+                    <div class="receipt-row border-bottom">
+                        <span class="receipt-label">Amount Paid</span>
+                        <span class="receipt-value" id="success-amount">₹0</span>
+                    </div>
+                    <div class="receipt-row border-bottom align-start">
+                        <span class="receipt-label">Bill Details</span>
+                        <div class="receipt-details">
+                            <p class="receipt-merchant" id="success-merchant">Paid to Merchant</p>
+                            <p class="receipt-upi" id="success-upi">upi@id</p>
+                            <p class="receipt-utr">UTR: 121 45 4012</p>
+                        </div>
+                    </div>
+                    <div class="receipt-footer">
+                        Find the details of this transaction on your registered email ID. No worries about the process!
+                    </div>
+                </div>
+            </div>
+
+            <div class="bottom-action no-bg">
+                <button class="btn-black full-width back-to-home">Go to Home</button>
+            </div>
+        </section>
+
+        <!-- ======================= -->
+        <!--     MOCK SCREENS        -->
+        <!-- ======================= -->
+        <!-- Cards Screen -->
+        <section id="cards-screen" class="screen bg-slate">
+            <header class="top-bar bg-white shadow-bottom">
+                <button class="back-btn back-to-home">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+                <h1>My Cards</h1>
+                <div style="width:24px;"></div>
+            </header>
+            <div class="flex-center-content">
+                <div class="mock-icon-bg"><svg width="40" height="40" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                        <line x1="1" y1="10" x2="23" y2="10"></line>
+                    </svg></div>
+                <h2>No Cards Linked</h2>
+                <p>Link your debit or credit cards here to make instant payments using SwiftPass.</p>
+                <button class="btn-black mt-24">Add New Card</button>
+            </div>
+        </section>
+
+        <!-- Transfers / Pay by UPI ID Screen -->
+        <section id="transfers-screen" class="screen bg-slate">
+            <header class="top-bar">
+                <button class="back-btn back-to-home">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12" />
+                        <polyline points="12 19 5 12 12 5" />
+                    </svg>
+                </button>
+                <h1>Pay via UPI</h1>
+                <div style="width:40px;"></div>
+            </header>
+            <div class="flex-center-content" style="justify-content:flex-start; padding-top:0;">
+
+                <!-- Pay by Phone -->
+                <div
+                    style="width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:20px; margin-bottom:16px;">
+                    <p
+                        style="font-size:11px; font-weight:700; letter-spacing:1.2px; color:rgba(255,255,255,0.35); text-transform:uppercase; margin-bottom:12px;">
+                        Pay by Phone Number</p>
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <span style="color:rgba(255,255,255,0.5); font-size:1.1rem; font-weight:600;">+91</span>
+                        <input id="pay-phone-input" type="tel" maxlength="10" placeholder="Enter 10-digit mobile number"
+                            style="flex:1; background:transparent; border:none; border-bottom:1px solid rgba(255,255,255,0.2); padding:10px 4px; font-size:1.1rem; font-family:inherit; font-weight:600; color:white; outline:none;" />
+                    </div>
+                    <input id="pay-phone-amount" type="number" placeholder="Amount (₹)"
+                        style="width:100%; background:transparent; border:none; border-bottom:1px solid rgba(255,255,255,0.15); padding:10px 4px; margin-top:14px; font-size:1.5rem; font-family:inherit; font-weight:800; color:#b4f056; outline:none;" />
+                    <button id="btn-pay-phone"
+                        style="width:100%; margin-top:18px; background:rgba(180,240,86,0.12); border:1px solid #b4f056; color:#b4f056; padding:14px; border-radius:50px; font-family:inherit; font-weight:700; font-size:0.95rem; cursor:pointer; letter-spacing:0.5px;">Send
+                        Money →</button>
+                </div>
+
+                <!-- Pay by UPI ID -->
+                <div
+                    style="width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:20px; margin-bottom:16px;">
+                    <p
+                        style="font-size:11px; font-weight:700; letter-spacing:1.2px; color:rgba(255,255,255,0.35); text-transform:uppercase; margin-bottom:12px;">
+                        Pay by UPI ID</p>
+                    <input id="pay-upi-id-input" type="text" placeholder="example@upi or name@bank"
+                        style="width:100%; background:transparent; border:none; border-bottom:1px solid rgba(255,255,255,0.2); padding:10px 4px; font-size:1rem; font-family:inherit; font-weight:600; color:white; outline:none;" />
+                    <input id="pay-upi-amount" type="number" placeholder="Amount (₹)"
+                        style="width:100%; background:transparent; border:none; border-bottom:1px solid rgba(255,255,255,0.15); padding:10px 4px; margin-top:14px; font-size:1.5rem; font-family:inherit; font-weight:800; color:#b4f056; outline:none;" />
+                    <input id="pay-upi-note" type="text" placeholder="Add a note (optional)"
+                        style="width:100%; background:transparent; border:none; border-bottom:1px solid rgba(255,255,255,0.1); padding:8px 4px; margin-top:12px; font-size:0.85rem; font-family:inherit; color:rgba(255,255,255,0.5); outline:none;" />
+                    <button id="btn-pay-upi"
+                        style="width:100%; margin-top:18px; background:rgba(180,240,86,0.12); border:1px solid #b4f056; color:#b4f056; padding:14px; border-radius:50px; font-family:inherit; font-weight:700; font-size:0.95rem; cursor:pointer; letter-spacing:0.5px;">Verify
+                        & Pay →</button>
+                </div>
+
+                <!-- Quick Contacts -->
+                <div style="width:100%;">
+                    <p
+                        style="font-size:11px; font-weight:700; letter-spacing:1.2px; color:rgba(255,255,255,0.35); text-transform:uppercase; margin-bottom:12px;">
+                        Quick Contacts</p>
+                    <div id="quick-contacts" style="display:flex; gap:16px; overflow-x:auto; padding-bottom:8px;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Profile Screen -->
+        <section id="profile-screen" class="screen bg-slate">
+            <header class="top-bar bg-white shadow-bottom">
+                <button class="back-btn back-to-home">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+                <h1>My Profile</h1>
+                <div style="width:24px;"></div>
+            </header>
+            <div class="flex-center-content pt-4">
+                <div class="user-avatar-large">SP</div>
+                <h2>Suriya Prakash</h2>
+                <p style="margin-bottom: 24px;">suriya@swiftpass.upi</p>
+
+                <div class="profile-list">
+                    <button class="list-btn align-left">Personal Details</button>
+                    <button class="list-btn align-left">App Settings</button>
+                    <button class="list-btn align-left">Security & Privacy</button>
+                    <button class="list-btn align-left">Help & Support</button>
+                </div>
+
+                <button class="btn-red mt-24">Sign Out</button>
+            </div>
+        </section>
+
+        <!-- Load Money Screen -->
+        <section id="load-screen" class="screen bg-slate">
+            <header class="top-bar">
+                <button class="back-btn back-to-home">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12" />
+                        <polyline points="12 19 5 12 12 5" />
+                    </svg>
+                </button>
+                <h1>Add Funds</h1>
+                <div style="width:40px;"></div>
+            </header>
+            <div class="flex-center-content" style="justify-content:flex-start; padding-top:0;">
+                <div
+                    style="width:100%; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1); border-radius:20px; padding:24px; margin-bottom:16px;">
+
+                    <p
+                        style="font-size:11px; font-weight:700; letter-spacing:1.2px; color:rgba(255,255,255,0.35); text-transform:uppercase; margin-bottom:8px;">
+                        Current Balance</p>
+                    <p id="load-current-balance"
+                        style="font-size:2.5rem; font-weight:900; color:#b4f056; letter-spacing:-1px; margin-bottom:24px;">
+                        &#8377;0.00</p>
+
+                    <p
+                        style="font-size:11px; font-weight:700; letter-spacing:1.2px; color:rgba(255,255,255,0.35); text-transform:uppercase; margin-bottom:12px;">
+                        Amount to Add</p>
+                    <div
+                        style="display:flex; align-items:center; gap:8px; border-bottom:1px solid rgba(255,255,255,0.2); padding-bottom:8px; margin-bottom:20px;">
+                        <span style="font-size:1.8rem; font-weight:700; color:rgba(255,255,255,0.4);">&#8377;</span>
+                        <input id="load-amount" type="number" placeholder="0" min="1" max="100000"
+                            style="flex:1; background:transparent; border:none; font-size:2rem; font-family:inherit; font-weight:800; color:white; outline:none; width:100%;" />
+                    </div>
+
+                    <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
+                        <button class="quick-amount-btn" data-amount="500">+ &#8377;500</button>
+                        <button class="quick-amount-btn" data-amount="1000">+ &#8377;1,000</button>
+                        <button class="quick-amount-btn" data-amount="2000">+ &#8377;2,000</button>
+                        <button class="quick-amount-btn" data-amount="5000">+ &#8377;5,000</button>
+                    </div>
+
+                    <p style="font-size:11px; color:rgba(255,255,255,0.3); margin-bottom:16px;">Funds added instantly
+                        from your linked bank account (HDFC ••••4821)</p>
+
+                    <button id="btn-load-confirm"
+                        style="width:100%; background:rgba(16,185,129,0.12); border:1px solid #10b981; color:#10b981; padding:16px; border-radius:50px; font-family:inherit; font-weight:700; font-size:1rem; cursor:pointer; letter-spacing:0.5px; transition:all 0.3s;">
+                        Add Money Now &#10003;
+                    </button>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- Invite Screen -->
+        <section id="invite-screen" class="screen bg-slate">
+            <header class="top-bar bg-white shadow-bottom">
+                <button class="back-btn back-to-home">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
+                </button>
+                <h1>Refer & Earn</h1>
+                <div style="width:24px;"></div>
+            </header>
+            <div class="flex-center-content">
+                <div class="mock-icon-bg bg-blue"><svg width="40" height="40" viewBox="0 0 24 24" fill="none"
+                        stroke="var(--accent-blue)" stroke-width="2">
+                        <polyline points="20 12 20 22 4 22 4 12"></polyline>
+                        <rect x="2" y="7" width="20" height="5"></rect>
+                        <line x1="12" y1="22" x2="12" y2="7"></line>
+                        <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"></path>
+                        <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"></path>
+                    </svg></div>
+                <h2>Invite Friends</h2>
+                <p>Earn ₹500 cashback when your friend makes their first payment on SwiftPass using your link!</p>
+
+                <div class="referral-box mt-24">
+                    <p class="ref-label">YOUR REFERRAL CODE</p>
+                    <div class="ref-code-area">
+                        <span class="ref-code">SURIYA500</span>
+                        <button class="btn-copy">Copy</button>
+                    </div>
+                </div>
+
+                <button class="btn-black full-width mt-auto" style="margin-top:40px;">Share Link</button>
+            </div>
+        </section>
+
+        <!-- Dynamic Bottom Navigation -->
+        <nav class="bottom-nav" id="main-nav">
+            <button class="nav-item active" id="nav-home" data-target="home-screen">
+                <!-- SVG Home -->
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+                </svg>
+                <span>Home</span>
+            </button>
+            <button class="nav-item text-muted" id="nav-cards" data-target="cards-screen">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect>
+                    <line x1="1" y1="10" x2="23" y2="10"></line>
+                </svg>
+                <span>Cards</span>
+            </button>
+
+            <!-- Floating Scan Action -->
+            <button class="nav-item action-btn" id="nav-scan" aria-label="Scan QR Code">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#b4f056" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <rect x="7" y="7" width="3" height="3"></rect>
+                    <rect x="14" y="7" width="3" height="3"></rect>
+                    <rect x="7" y="14" width="3" height="3"></rect>
+                    <rect x="14" y="14" width="3" height="3"></rect>
+                </svg>
+            </button>
+
+            <button class="nav-item text-muted" id="nav-transfers" data-target="transfers-screen">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+                <span>Transfers</span>
+            </button>
+            <button class="nav-item text-muted" id="nav-profile" data-target="profile-screen">
+                <div class="nav-profile-sm"></div>
+                <span>Profile</span>
+            </button>
+        </nav>
+
+        <!-- ======================= -->
+        <!--    DRAW PIN SCREEN      -->
+        <!-- ======================= -->
+        <section id="pin-screen" class="screen"
+            style="position:fixed;inset:0;z-index:999;background:#0a0a0f;display:none;overflow:hidden;">
+
+            <!-- Full screen drawing area (z-index 0: below everything) -->
+            <canvas id="pin-canvas"
+                style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair;z-index:0;background:transparent;">
+            </canvas>
+
+            <!-- All UI elements sit ABOVE the tap area (z-index:10+) -->
+
+            <!-- Cancel button top left -->
+            <button id="pin-back-btn"
+                style="position:absolute;top:16px;left:16px;background:none;border:none;color:rgba(255,255,255,0.4);font-size:13px;z-index:20;cursor:pointer;pointer-events:auto;">✕
+                Cancel</button>
+
+            <!-- 'Scan & Pay' label top center -->
+            <p
+                style="position:absolute;top:18px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.25);font-size:12px;letter-spacing:2px;text-transform:uppercase;z-index:20;pointer-events:none;">
+                SwiftPass PIN</p>
+
+            <!-- PIN progress dots — center top area -->
+            <div id="pin-dots"
+                style="position:absolute;top:60px;left:0;right:0;display:flex;gap:20px;justify-content:center;z-index:20;pointer-events:none;">
+                <div class="pin-dot" id="dot-0"></div>
+                <div class="pin-dot" id="dot-1"></div>
+                <div class="pin-dot" id="dot-2"></div>
+                <div class="pin-dot" id="dot-3"></div>
+            </div>
+
+            <!-- Instruction text below dots -->
+            <p id="pin-instruction"
+                style="position:absolute;top:128px;left:0;right:0;color:rgba(255,255,255,0.4);font-size:13px;text-align:center;z-index:20;pointer-events:none;letter-spacing:0.5px;line-height:1.6;">
+                Enter digit <b style="color:#b4f056">1</b> of 4<br>
+                <span style="font-size:11px;opacity:0.6;">Draw the number anywhere on screen. Wait 1s to
+                    confirm.</span>
+            </p>
+
+            <!-- Large recognized digit preview — flashes in center of screen -->
+            <div id="pin-feedback"
+                style="position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);z-index:20;pointer-events:none;text-align:center;">
+                <span id="pin-digit-preview"
+                    style="font-size:140px;font-weight:900;color:#b4f056;opacity:0;transition:opacity 0.15s;text-shadow:0 0 40px rgba(180,240,86,0.6);line-height:1;display:block;"></span>
+                <p id="pin-recognized-label"
+                    style="color:rgba(255,255,255,0.5);font-size:13px;margin-top:4px;letter-spacing:1px;opacity:0;transition:opacity 0.15s;">
+                    Recognized digit</p>
+            </div>
+
+            <!-- Confirm / Redraw buttons — appear after recognition -->
+            <div id="pin-redraw-btn"
+                style="position:absolute;bottom:100px;left:0;right:0;display:none;gap:16px;justify-content:center;align-items:center;z-index:30;pointer-events:auto;">
+                <button id="pin-redo-digit"
+                    style="background:rgba(255,80,80,0.15);border:2px solid #ff4d4d;color:#ff4d4d;border-radius:50px;padding:14px 28px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">
+                    ✗ Redraw
+                </button>
+                <button id="pin-confirm-digit"
+                    style="background:rgba(180,240,86,0.15);border:2px solid #b4f056;color:#b4f056;border-radius:50px;padding:14px 28px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">
+                    ✔ Keep It
+                </button>
+            </div>
+
+            <!-- Error message bottom -->
+            <div id="pin-error"
+                style="position:absolute;bottom:80px;left:0;right:0;text-align:center;color:#ff4d4d;font-size:15px;font-weight:bold;opacity:0;transition:opacity 0.3s;z-index:20;pointer-events:none;">
+                ❌ Wrong PIN. Try again.</div>
+        </section>
+
+
+
+
+    </div>
+
+    <!-- Dev Privacy Debug Overlay Canvas -->
+    <canvas id="privacy-debug-canvas" width="320" height="240"
+        style="display:none; position:fixed; top:12px; right:12px; z-index:99999; border:2px solid #10b981; background:rgba(0,0,0,0.85); width:140px; height:105px; pointer-events:none; border-radius:8px; box-shadow:0 4px 20px rgba(0,0,0,0.5);"></canvas>
+
+    <!-- Scripts -->
+    <script src="camera-manager.js"></script>
+    <script src="privacy-vision.js"></script>
+    <script src="transaction-state-machine.js"></script>
+    <script src="smart-qr-parser.js"></script>
+    <script src="transactions.js"></script>
+    <script src="qr-scanner.js"></script>
+    <script src="payment.js"></script>
+    <script src="pin.js"></script>
+    <script src="app.js"></script>
+    <script src="upi.js"></script>
+</body>
+
+</html>
