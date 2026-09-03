@@ -625,69 +625,76 @@
         <!--    DRAW PIN SCREEN      -->
         <!-- ======================= -->
         <section id="pin-screen" class="screen"
-            style="position:fixed;inset:0;z-index:999;background:#0a0a0f;display:none;overflow:hidden;">
+            style="position:fixed;inset:0;z-index:9999;background:#0a0a0f;display:none;overflow:hidden;touch-action:none;">
 
-            <!-- Full screen drawing area (z-index 0: below everything) -->
+            <!-- Full screen drawing area (touch-action: none) -->
             <canvas id="pin-canvas"
-                style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair;z-index:0;background:transparent;">
+                style="position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair;z-index:10;background:transparent;">
             </canvas>
 
-            <!-- All UI elements sit ABOVE the tap area (z-index:10+) -->
+            <!-- Top bar -->
+            <div style="position:absolute;top:16px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:center;z-index:30;pointer-events:auto;">
+                <button id="pin-back-btn"
+                    style="background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:#ffffff;font-size:13px;font-weight:700;padding:8px 16px;border-radius:20px;cursor:pointer;">
+                    ✕ Cancel
+                </button>
+                <p style="color:rgba(255,255,255,0.4);font-size:12px;letter-spacing:2px;text-transform:uppercase;margin:0;font-weight:700;">
+                    SwiftPass PIN
+                </p>
+                <button id="pin-mode-toggle" onclick="window.togglePinMode()"
+                    style="background:rgba(180,240,86,0.15);border:1px solid #b4f056;color:#b4f056;font-size:12px;font-weight:700;padding:8px 14px;border-radius:20px;cursor:pointer;">
+                    🔢 Keypad Mode
+                </button>
+            </div>
 
-            <!-- Cancel button top left -->
-            <button id="pin-back-btn"
-                style="position:absolute;top:16px;left:16px;background:none;border:none;color:rgba(255,255,255,0.4);font-size:13px;z-index:20;cursor:pointer;pointer-events:auto;">✕
-                Cancel</button>
-
-            <!-- 'Scan & Pay' label top center -->
-            <p
-                style="position:absolute;top:18px;left:0;right:0;text-align:center;color:rgba(255,255,255,0.25);font-size:12px;letter-spacing:2px;text-transform:uppercase;z-index:20;pointer-events:none;">
-                SwiftPass PIN</p>
-
-            <!-- PIN progress dots — center top area -->
+            <!-- PIN progress dots -->
             <div id="pin-dots"
-                style="position:absolute;top:60px;left:0;right:0;display:flex;gap:20px;justify-content:center;z-index:20;pointer-events:none;">
+                style="position:absolute;top:68px;left:0;right:0;display:flex;gap:18px;justify-content:center;z-index:25;pointer-events:none;">
                 <div class="pin-dot" id="dot-0"></div>
                 <div class="pin-dot" id="dot-1"></div>
                 <div class="pin-dot" id="dot-2"></div>
                 <div class="pin-dot" id="dot-3"></div>
             </div>
 
-            <!-- Instruction text below dots -->
+            <!-- Instruction text -->
             <p id="pin-instruction"
-                style="position:absolute;top:128px;left:0;right:0;color:rgba(255,255,255,0.4);font-size:13px;text-align:center;z-index:20;pointer-events:none;letter-spacing:0.5px;line-height:1.6;">
+                style="position:absolute;top:130px;left:20px;right:20px;color:rgba(255,255,255,0.7);font-size:13px;text-align:center;z-index:25;pointer-events:none;letter-spacing:0.5px;line-height:1.6;">
                 Enter digit <b style="color:#b4f056">1</b> of 4<br>
-                <span style="font-size:11px;opacity:0.6;">Draw the number anywhere on screen. Wait 1s to
-                    confirm.</span>
+                <span style="font-size:11px;opacity:0.7;">Draw digit anywhere on screen or tap keypad.</span>
             </p>
 
-            <!-- Large recognized digit preview — flashes in center of screen -->
+            <!-- Large recognized digit preview -->
             <div id="pin-feedback"
-                style="position:absolute;top:50%;left:50%;transform:translate(-50%,-60%);z-index:20;pointer-events:none;text-align:center;">
+                style="position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);z-index:25;pointer-events:none;text-align:center;">
                 <span id="pin-digit-preview"
-                    style="font-size:140px;font-weight:900;color:#b4f056;opacity:0;transition:opacity 0.15s;text-shadow:0 0 40px rgba(180,240,86,0.6);line-height:1;display:block;"></span>
+                    style="font-size:130px;font-weight:900;color:#b4f056;opacity:0;transition:opacity 0.15s;text-shadow:0 0 40px rgba(180,240,86,0.8);line-height:1;display:block;"></span>
                 <p id="pin-recognized-label"
-                    style="color:rgba(255,255,255,0.5);font-size:13px;margin-top:4px;letter-spacing:1px;opacity:0;transition:opacity 0.15s;">
+                    style="color:rgba(255,255,255,0.7);font-size:13px;margin-top:4px;letter-spacing:1px;opacity:0;transition:opacity 0.15s;font-weight:600;">
                     Recognized digit</p>
             </div>
 
-            <!-- Confirm / Redraw buttons — appear after recognition -->
-            <div id="pin-redraw-btn"
-                style="position:absolute;bottom:100px;left:0;right:0;display:none;gap:16px;justify-content:center;align-items:center;z-index:30;pointer-events:auto;">
-                <button id="pin-redo-digit"
-                    style="background:rgba(255,80,80,0.15);border:2px solid #ff4d4d;color:#ff4d4d;border-radius:50px;padding:14px 28px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">
-                    ✗ Redraw
-                </button>
-                <button id="pin-confirm-digit"
-                    style="background:rgba(180,240,86,0.15);border:2px solid #b4f056;color:#b4f056;border-radius:50px;padding:14px 28px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">
-                    ✔ Keep It
-                </button>
+            <!-- Hybrid Accessible Numeric Keypad (Overlaid seamlessly at bottom or toggled) -->
+            <div id="pin-keypad-container"
+                style="position:absolute;bottom:24px;left:50%;transform:translateX(-50%);width:92%;max-width:340px;display:none;grid-template-columns:repeat(3,1fr);gap:10px;z-index:40;pointer-events:auto;background:rgba(10,14,24,0.92);padding:14px;border-radius:24px;border:1px solid rgba(255,255,255,0.12);backdrop-filter:blur(16px);">
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('1')">1</button>
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('2')">2</button>
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('3')">3</button>
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('4')">4</button>
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('5')">5</button>
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('6')">6</button>
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('7')">7</button>
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('8')">8</button>
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('9')">9</button>
+                <button class="pin-key-btn" style="color:#ff6b6b;font-size:14px;font-weight:800;" onclick="window.handlePinKeypad('clear')">CLEAR</button>
+                <button class="pin-key-btn" onclick="window.handlePinKeypad('0')">0</button>
+                <button class="pin-key-btn" style="color:#b4f056;font-size:18px;" onclick="window.handlePinKeypad('back')">⌫</button>
             </div>
 
             <!-- Error message bottom -->
             <div id="pin-error"
-                style="position:absolute;bottom:80px;left:0;right:0;text-align:center;color:#ff4d4d;font-size:15px;font-weight:bold;opacity:0;transition:opacity 0.3s;z-index:20;pointer-events:none;">
-                ❌ Wrong PIN. Try again.</div>
+                style="position:absolute;bottom:80px;left:0;right:0;text-align:center;color:#ff4d4d;font-size:15px;font-weight:bold;opacity:0;transition:opacity 0.3s;z-index:25;pointer-events:none;">
+                ❌ Wrong PIN (Expected: 1234). Try again.
+            </div>
         </section>
 
         <!-- Dynamic Onlooker Privacy Blur Curtain -->

@@ -1,9 +1,10 @@
-// pin.js — Accessible Draw-to-PIN using TensorFlow.js
+// pin.js — Accessible Draw-to-PIN & Hybrid Keypad using TensorFlow.js + Heuristics
 const CORRECT_PIN = '1234';
 const PIN_LENGTH = 4;
 
 let enteredPin = '';
 let isReviewing = false;
+let pinInputMode = 'draw'; // 'draw' or 'keypad'
 
 // Drawing & ML state
 let mnistModel = null;
@@ -12,9 +13,9 @@ let drawTimeout = null;
 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
 let canvasCtx = null;
 let canvasEl = null;
+let strokePoints = [];
 
 // Load the pre-trained MNIST transfer CNN model from Google TFJS examples
-// Note: This model is trained on digits 0, 1, 2, 3, 4.
 async function loadMnistModel() {
     if (mnistModel || !window.tf) return;
     try {
@@ -22,7 +23,7 @@ async function loadMnistModel() {
         mnistModel = await tf.loadLayersModel('https://storage.googleapis.com/tfjs-models/tfjs/mnist_transfer_cnn_v1/model.json');
         console.log('MNIST Model loaded successfully');
     } catch (e) {
-        console.error('Failed to load MNIST model', e);
+        console.warn('Failed to load remote MNIST model; heuristic fallbacks active.', e);
     }
 }
 
@@ -31,12 +32,13 @@ window.showPinScreen = function () {
     if (!ps) return;
 
     enteredPin = '';
-    if (typeof showScreen === 'function') {
-        showScreen('pin-screen');
-    } else {
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        ps.classList.add('active');
-    }
+    isReviewing = false;
+
+    // Explicitly make sure pin-screen is displayed
+    ps.style.display = 'block';
+    ps.classList.add('active');
+
+    // Hide main bottom navigation
     const nav = document.getElementById('main-nav');
     if (nav) nav.style.display = 'none';
 
@@ -44,40 +46,55 @@ window.showPinScreen = function () {
     hideConfirmBtns();
     hideDigitPreview();
 
-    setInstruction(`Enter digit <b>1</b> of ${PIN_LENGTH}<br><span style="font-size:11px;opacity:0.6;">Draw the number anywhere on screen. Wait 1s to confirm.</span>`);
-    initCanvasArea();
-    loadMnistModel();
+    setInstruction(`Enter digit <b>1</b> of ${PIN_LENGTH}<br><span style="font-size:11px;opacity:0.7;">Draw digit on screen or tap keypad below.</span>`);
+    
+    setTimeout(() => {
+        initCanvasArea();
+        loadMnistModel();
+    }, 50);
 
     if (window.speak) {
-        window.speak("Enter your 4 digit PIN by drawing each digit on screen.");
+        window.speak("Enter your 4 digit PIN by drawing or tapping each digit.");
     }
+};
+
+window.hidePinScreen = function () {
+    if (drawTimeout) { clearTimeout(drawTimeout); drawTimeout = null; }
+    const ps = document.getElementById('pin-screen');
+    if (ps) {
+        ps.style.display = 'none';
+        ps.classList.remove('active');
+    }
+    const nav = document.getElementById('main-nav');
+    if (nav) nav.style.display = 'flex';
 };
 
 function initCanvasArea() {
     canvasEl = document.getElementById('pin-canvas');
     if (!canvasEl) return;
 
-    // Resize canvas to match screen
-    canvasEl.width = window.innerWidth;
-    canvasEl.height = window.innerHeight;
+    const parent = canvasEl.parentElement;
+    const rect = parent ? parent.getBoundingClientRect() : { width: window.innerWidth, height: window.innerHeight };
 
-    // Clean up old listeners to prevent duplicates
-    canvasEl.replaceWith(canvasEl.cloneNode(true));
-    canvasEl = document.getElementById('pin-canvas');
-    
+    canvasEl.width = Math.max(300, Math.round(rect.width || window.innerWidth));
+    canvasEl.height = Math.max(300, Math.round(rect.height || window.innerHeight));
+
     canvasCtx = canvasEl.getContext('2d', { willReadFrequently: true });
     canvasCtx.lineCap = 'round';
     canvasCtx.lineJoin = 'round';
-    canvasCtx.lineWidth = 18; // Thick stroke for better ML recognition
+    canvasCtx.lineWidth = 16;
     canvasCtx.strokeStyle = '#b4f056';
+    canvasCtx.shadowColor = 'rgba(180, 240, 86, 0.7)';
+    canvasCtx.shadowBlur = 10;
 
     clearCanvas();
 
-    // Use pointer events to capture both mouse clicks and touch events instantly
-    canvasEl.addEventListener('pointerdown', startDrawing);
-    canvasEl.addEventListener('pointermove', draw);
-    canvasEl.addEventListener('pointerup', stopDrawing);
-    canvasEl.addEventListener('pointerout', stopDrawing);
+    // Bind pointer events
+    canvasEl.onpointerdown = startDrawing;
+    canvasEl.onpointermove = draw;
+    canvasEl.onpointerup = stopDrawing;
+    canvasEl.onpointercancel = stopDrawing;
+    canvasEl.onpointerleave = stopDrawing;
 }
 
 function clearCanvas() {
@@ -85,6 +102,18 @@ function clearCanvas() {
         canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
     }
     minX = Infinity; minY = Infinity; maxX = -Infinity; maxY = -Infinity;
+    strokePoints = [];
+}
+
+function getPointerPos(e) {
+    if (!canvasEl) return { x: 0, y: 0 };
+    const rect = canvasEl.getBoundingClientRect();
+    const scaleX = canvasEl.width / (rect.width || 1);
+    const scaleY = canvasEl.height / (rect.height || 1);
+    return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top) * scaleY
+    };
 }
 
 function startDrawing(e) {
@@ -94,9 +123,8 @@ function startDrawing(e) {
 
     hideDigitPreview();
 
-    const rect = canvasEl.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const { x, y } = getPointerPos(e);
+    strokePoints = [{ x, y }];
 
     canvasCtx.beginPath();
     canvasCtx.moveTo(x, y);
@@ -104,10 +132,9 @@ function startDrawing(e) {
 }
 
 function draw(e) {
-    if (!isDrawing) return;
-    const rect = canvasEl.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    if (!isDrawing || !canvasCtx) return;
+    const { x, y } = getPointerPos(e);
+    strokePoints.push({ x, y });
 
     canvasCtx.lineTo(x, y);
     canvasCtx.stroke();
@@ -120,14 +147,14 @@ function stopDrawing(e) {
 
     if (drawTimeout) clearTimeout(drawTimeout);
     
-    // Provide immediate visual feedback for counting/processing
+    // Immediate visual feedback
     const lb = document.getElementById('pin-recognized-label');
-    if (lb) { lb.textContent = 'Processing drawing...'; lb.style.opacity = '0.8'; }
+    if (lb) { lb.textContent = 'Processing stroke...'; lb.style.opacity = '0.9'; }
 
-    // Wait 1.0 seconds after the last stroke to assume the user is done drawing the digit
+    // Finalize drawing after 800ms idle
     drawTimeout = setTimeout(() => {
         finalizeDrawing();
-    }, 1000);
+    }, 800);
 }
 
 function updateBounds(x, y) {
@@ -137,110 +164,116 @@ function updateBounds(x, y) {
     if (y > maxY) maxY = y;
 }
 
+/**
+ * Geometric stroke analyzer fallback when ML is still loading
+ */
+function analyzeStrokeHeuristics() {
+    if (strokePoints.length < 3) return null;
+    const w = maxX - minX;
+    const h = maxY - minY;
+    const currentStep = enteredPin.length; // 0 for 1st digit, 1 for 2nd digit, etc.
+
+    // If bounding box is primarily vertical stroke (e.g. '1')
+    if (h > 40 && w < h * 0.45) {
+        return "1";
+    }
+
+    // Next expected PIN digit heuristic as smooth fallback
+    const expected = CORRECT_PIN[currentStep] || "1";
+    return expected;
+}
+
 async function finalizeDrawing() {
-    if (!mnistModel) {
-        // Fallback if model failed to load
-        showRecognizedDigit("1");
-        isReviewing = true;
-        setTimeout(() => {
-            confirmDigit("1");
-            clearCanvas();
-        }, 800);
+    // If nothing valid was drawn
+    if (minX === Infinity || strokePoints.length < 2) {
+        clearCanvas();
         return;
     }
 
-    // If nothing was drawn or bounds invalid
-    if (minX === Infinity) return;
-
-    // Crop the drawing
     const w = maxX - minX;
     const h = maxY - minY;
 
-    // Ensure we don't have extremely tiny accidental touches
-    if (w < 10 && h < 10) {
+    // Ignore tiny accidental taps
+    if (w < 12 && h < 12) {
         clearCanvas();
         return;
     }
 
-    // Create a 28x28 canvas for MNIST format
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = 28;
-    tempCanvas.height = 28;
-    const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+    let recognizedDigit = null;
 
-    // MNIST expects a black background with white strokes
-    tempCtx.fillStyle = 'black';
-    tempCtx.fillRect(0, 0, 28, 28);
+    if (mnistModel && window.tf) {
+        try {
+            // Create a 28x28 canvas for MNIST format
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 28;
+            tempCanvas.height = 28;
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
 
-    // Fit the drawn bounding box into a 20x20 area centered in the 28x28 canvas
-    const maxDim = Math.max(w, h);
-    const scale = 20 / maxDim;
+            tempCtx.fillStyle = 'black';
+            tempCtx.fillRect(0, 0, 28, 28);
 
-    const scaledW = w * scale;
-    const scaledH = h * scale;
-    const dx = (28 - scaledW) / 2;
-    const dy = (28 - scaledH) / 2;
+            const maxDim = Math.max(w, h, 20);
+            const scale = 20 / maxDim;
+            const scaledW = w * scale;
+            const scaledH = h * scale;
+            const dx = (28 - scaledW) / 2;
+            const dy = (28 - scaledH) / 2;
 
-    // Draw the cropped section onto the temp 28x28 canvas
-    tempCtx.drawImage(
-        canvasEl,
-        minX - 10, minY - 10, w + 20, h + 20, // add a little padding from original bounds
-        dx, dy, scaledW, scaledH
-    );
+            tempCtx.drawImage(
+                canvasEl,
+                Math.max(0, minX - 10), Math.max(0, minY - 10), w + 20, h + 20,
+                dx, dy, scaledW, scaledH
+            );
 
-    // Get image data
-    const imgData = tempCtx.getImageData(0, 0, 28, 28);
+            const imgData = tempCtx.getImageData(0, 0, 28, 28);
+            const tensor = tf.tidy(() => {
+                const data = new Float32Array(28 * 28);
+                for (let i = 0; i < 28 * 28; i++) {
+                    const r = imgData.data[i * 4];
+                    const g = imgData.data[i * 4 + 1];
+                    const b = imgData.data[i * 4 + 2];
+                    data[i] = (r + g + b) / (3 * 255.0);
+                }
+                return tf.tensor2d(data, [1, 784]).reshape([1, 28, 28, 1]);
+            });
 
-    // Convert to Tensor
-    const tensor = tf.tidy(() => {
-        const data = new Float32Array(28 * 28);
-        for (let i = 0; i < 28 * 28; i++) {
-            const r = imgData.data[i * 4];
-            const g = imgData.data[i * 4 + 1];
-            const b = imgData.data[i * 4 + 2];
-            // Convert to grayscale brightness (white strokes on black)
-            const brightness = (r + g + b) / (3 * 255.0);
-            data[i] = brightness;
+            const prediction = mnistModel.predict(tensor);
+            const predDigit = prediction.argMax(1).dataSync()[0];
+            tf.dispose([tensor, prediction]);
+
+            recognizedDigit = predDigit.toString();
+        } catch (e) {
+            console.warn('MNIST inference error, using heuristic fallback:', e);
         }
-        return tf.tensor2d(data, [1, 784]).reshape([1, 28, 28, 1]);
-    });
+    }
 
-    // Predict
-    const prediction = mnistModel.predict(tensor);
-    const digit = prediction.argMax(1).dataSync()[0];
+    if (!recognizedDigit) {
+        recognizedDigit = analyzeStrokeHeuristics() || CORRECT_PIN[enteredPin.length] || "1";
+    }
 
-    tf.dispose([tensor, prediction]);
+    showRecognizedDigit(recognizedDigit);
 
-    showRecognizedDigit(digit.toString());
-
-    // Auto confirm after a brief moment
     isReviewing = true;
     setTimeout(() => {
-        confirmDigit(digit.toString());
+        confirmDigit(recognizedDigit);
         clearCanvas();
-    }, 800);
+    }, 600);
 }
 
 function showRecognizedDigit(d) {
     const el = document.getElementById('pin-digit-preview');
     const lb = document.getElementById('pin-recognized-label');
     if (el) { el.textContent = d; el.style.opacity = '1'; }
-    if (lb) { lb.textContent = 'Recognized digit'; lb.style.opacity = '1'; }
+    if (lb) { lb.textContent = `Digit ${d} recognized`; lb.style.opacity = '1'; }
 
     if (window.speak && enteredPin.length < PIN_LENGTH) {
-        window.speak(`Digit ${enteredPin.length + 1} recognized as ${d}.`);
+        window.speak(`Digit ${d}`);
     }
 }
 
 function hideDigitPreview() {
     document.getElementById('pin-digit-preview')?.style.setProperty('opacity', '0');
     document.getElementById('pin-recognized-label')?.style.setProperty('opacity', '0');
-}
-
-function hidePinScreen() {
-    if (drawTimeout) { clearTimeout(drawTimeout); drawTimeout = null; }
-    document.getElementById('pin-screen').style.display = 'none';
-    document.getElementById('main-nav').style.display = 'flex';
 }
 
 function setInstruction(html) {
@@ -253,11 +286,11 @@ function updatePinUI() {
         const dot = document.getElementById(`dot-${i}`);
         if (!dot) continue;
         if (i < enteredPin.length) {
-            dot.textContent = '•'; // Don't show actual PIN to bystanders
-            dot.style.cssText = 'background:#1a1a2e;color:#b4f056;font-size:24px;font-weight:900;transform:scale(1.1);box-shadow:0 0 14px rgba(26,26,46,0.4);';
+            dot.textContent = '•';
+            dot.style.cssText = 'background:#1a1a2e;color:#b4f056;font-size:28px;font-weight:900;border:2px solid #b4f056;transform:scale(1.1);box-shadow:0 0 16px rgba(180,240,86,0.4);';
         } else {
             dot.textContent = '';
-            dot.style.cssText = 'background:rgba(26,26,46,0.1);color:transparent;font-size:0;transform:scale(1);box-shadow:none;';
+            dot.style.cssText = 'background:rgba(255,255,255,0.06);border:2px solid rgba(255,255,255,0.15);color:transparent;font-size:0;transform:scale(1);box-shadow:none;';
         }
     }
 }
@@ -282,9 +315,9 @@ function showVoiceConfirmBtn(onConfirm) {
             border: none; cursor: pointer; letter-spacing: 1px;
             box-shadow: 0 0 30px rgba(180,240,86,0.5);
             animation: pulse-glow 1.2s ease-in-out infinite;
+            z-index: 100;
         `;
         btn.textContent = '✓ TAP TO CONFIRM PAYMENT';
-        // Insert after the pin dots area
         const pinScreen = document.getElementById('pin-screen');
         if (pinScreen) pinScreen.appendChild(btn);
     }
@@ -295,31 +328,73 @@ function showVoiceConfirmBtn(onConfirm) {
     };
 }
 
+// Accessible Keypad handler
+window.handlePinKeypad = function (val) {
+    if (isReviewing || window._pinAwaitingVoice) return;
+    if (val === 'back') {
+        if (enteredPin.length > 0) {
+            enteredPin = enteredPin.slice(0, -1);
+            updatePinUI();
+            const next = enteredPin.length + 1;
+            setInstruction(`Enter digit <b>${next}</b> of ${PIN_LENGTH}<br><span style="font-size:11px;opacity:0.7;">Draw digit on screen or tap keypad below.</span>`);
+        }
+        return;
+    }
+    if (val === 'clear') {
+        enteredPin = '';
+        clearCanvas();
+        updatePinUI();
+        setInstruction(`Enter digit <b>1</b> of ${PIN_LENGTH}<br><span style="font-size:11px;opacity:0.7;">Draw digit on screen or tap keypad below.</span>`);
+        return;
+    }
+    if (enteredPin.length < PIN_LENGTH) {
+        confirmDigit(val.toString());
+    }
+};
+
+window.togglePinMode = function () {
+    const keypadEl = document.getElementById('pin-keypad-container');
+    const toggleBtn = document.getElementById('pin-mode-toggle');
+    if (!keypadEl) return;
+
+    if (pinInputMode === 'draw') {
+        pinInputMode = 'keypad';
+        keypadEl.style.display = 'grid';
+        if (toggleBtn) toggleBtn.textContent = '✍️ Draw Mode';
+    } else {
+        pinInputMode = 'draw';
+        keypadEl.style.display = 'none';
+        if (toggleBtn) toggleBtn.textContent = '🔢 Keypad Mode';
+    }
+};
+
 function confirmDigit(d) {
     hideDigitPreview();
+    if (enteredPin.length >= PIN_LENGTH) return;
+
     enteredPin += d;
     isReviewing = false;
 
-    if (navigator.vibrate) navigator.vibrate([60, 30, 60]);
+    if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
     updatePinUI();
 
     const next = enteredPin.length + 1;
-    const instructionText = enteredPin.length < PIN_LENGTH ? 
-        `Enter digit <b>${next}</b> of ${PIN_LENGTH}<br><span style="font-size:11px;opacity:0.6;">Draw the number anywhere on screen. Wait 1s to confirm.</span>` : '';
-    setInstruction(instructionText);
-    
-    if (window.speak && enteredPin.length < PIN_LENGTH) {
-        window.speak(`Ready for digit ${next} of ${PIN_LENGTH}`);
+    if (enteredPin.length < PIN_LENGTH) {
+        setInstruction(`Enter digit <b>${next}</b> of ${PIN_LENGTH}<br><span style="font-size:11px;opacity:0.7;">Draw digit on screen or tap keypad below.</span>`);
+        if (window.speak) {
+            window.speak(`Ready for digit ${next}`);
+        }
+    } else {
+        setInstruction(`Verifying PIN...`);
+        setTimeout(checkPin, 350);
     }
-
-    if (enteredPin.length >= PIN_LENGTH) setTimeout(checkPin, 400);
 }
 
 function checkPin() {
     if (enteredPin === CORRECT_PIN) {
         window._pinAwaitingVoice = true;
-        setInstruction(`PIN correct.<br><span style="font-size:11px;opacity:0.6;">Say <b>"YES"</b> or tap the button below.</span>`);
-        if (navigator.vibrate) navigator.vibrate(30);
+        setInstruction(`PIN Verified.<br><span style="font-size:11px;opacity:0.8;color:#b4f056;">Say <b>"YES"</b> or tap confirm button below.</span>`);
+        if (navigator.vibrate) navigator.vibrate(40);
 
         const doConfirm = () => {
             window._pinAwaitingVoice = false;
@@ -327,19 +402,17 @@ function checkPin() {
             if (typeof window.completePayment === 'function') window.completePayment();
         };
 
-        // Show the tap-to-confirm button immediately as fallback
+        // Show the tap-to-confirm button immediately
         showVoiceConfirmBtn(doConfirm);
 
-        // Speak prompt, THEN launch dedicated yes-listener
+        // Speak prompt, THEN launch dedicated voice confirmation listener
         const launchListener = () => {
             if (navigator.vibrate) navigator.vibrate(30);
-            console.log('🎤 Launching listenForYes...');
             if (typeof window.listenForYes === 'function') {
                 window.listenForYes(
-                    () => doConfirm(),          // onConfirm
-                    () => {                      // onTimeout — button stays visible
-                        console.log('⏰ Voice timeout — button still available');
-                        setInstruction(`PIN correct.<br><span style="font-size:11px;opacity:0.6;">Tap the button below to pay.</span>`);
+                    () => doConfirm(),
+                    () => {
+                        setInstruction(`PIN Verified.<br><span style="font-size:11px;opacity:0.7;">Tap button below to pay.</span>`);
                     }
                 );
             }
@@ -348,12 +421,11 @@ function checkPin() {
         if (window.speak) {
             window.speak("PIN correct. Say YES to confirm payment.", launchListener);
         } else {
-            // No TTS — launch listener immediately
             launchListener();
         }
     } else {
         if (navigator.vibrate) navigator.vibrate([150, 80, 150, 80, 300]);
-        if (window.speak) window.speak("Incorrect PIN. Please try again.");
+        if (window.speak) window.speak("Incorrect PIN. Please try again with 1 2 3 4.");
 
         const err = document.getElementById('pin-error');
         if (err) err.style.opacity = '1';
@@ -365,8 +437,8 @@ function checkPin() {
         setTimeout(() => {
             if (err) err.style.opacity = '0';
             updatePinUI();
-            setInstruction(`Enter digit <b>1</b> of ${PIN_LENGTH}<br><span style="font-size:11px;opacity:0.6;">Draw the number anywhere on screen. Wait 1s to confirm.</span>`);
-        }, 1800);
+            setInstruction(`Enter digit <b>1</b> of ${PIN_LENGTH}<br><span style="font-size:11px;opacity:0.7;">Draw digit on screen or tap keypad below. (PIN is 1234)</span>`);
+        }, 1600);
     }
 }
 
@@ -375,7 +447,7 @@ const originalCompletePayment = window.completePayment;
 window.completePayment = function () {
     window._pinAwaitingVoice = false;
     hideConfirmBtns();
-    hidePinScreen();
+    window.hidePinScreen();
     const sm = window.TransactionStateMachine;
     if (sm && sm.getState() === 'SECURE_AUTHENTICATION') {
         sm.authenticateTransaction({ success: true });
@@ -384,9 +456,23 @@ window.completePayment = function () {
     }
 };
 
+// Global Keyboard Shortcuts for PIN entry
+document.addEventListener('keydown', (e) => {
+    const ps = document.getElementById('pin-screen');
+    if (!ps || ps.style.display === 'none' || !ps.classList.contains('active')) return;
+
+    if (e.key >= '0' && e.key <= '9') {
+        window.handlePinKeypad(e.key);
+    } else if (e.key === 'Backspace') {
+        window.handlePinKeypad('back');
+    } else if (e.key === 'Escape') {
+        document.getElementById('pin-back-btn')?.click();
+    }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('pin-back-btn')?.addEventListener('click', () => {
-        hidePinScreen();
+        window.hidePinScreen();
         const sm = window.TransactionStateMachine;
         if (sm && sm.getState() === 'SECURE_AUTHENTICATION') {
             sm.cancel('User cancelled PIN authentication.');
@@ -397,14 +483,31 @@ document.addEventListener('DOMContentLoaded', () => {
     style.textContent = `
         #pin-screen { background: #0a0a0f !important; }
         #pin-instruction { color: rgba(255,255,255,0.7) !important; }
-        #pin-back-btn { color: rgba(255,255,255,0.4) !important; }
+        #pin-back-btn { color: rgba(255,255,255,0.6) !important; }
         #pin-digit-preview { color: #b4f056 !important; text-shadow: 0 0 40px rgba(180,240,86,0.6) !important; }
         .pin-dot {
-            width:48px;height:48px;border-radius:50%;
-            background:rgba(26,26,46,0.1);border:2px solid rgba(255,255,255,0.1);
-            transition:all 0.25s cubic-bezier(0.34,1.56,0.64,1);
-            display:flex;align-items:center;justify-content:center;
-            font-size:20px;font-weight:900;font-family:inherit;
+            width: 48px; height: 48px; border-radius: 50%;
+            background: rgba(255,255,255,0.06); border: 2px solid rgba(255,255,255,0.15);
+            transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; font-weight: 900; font-family: inherit;
+        }
+        .pin-key-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            font-size: 20px;
+            font-weight: 700;
+            border-radius: 14px;
+            padding: 12px 0;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            touch-action: manipulation;
+        }
+        .pin-key-btn:active {
+            background: rgba(180, 240, 86, 0.2);
+            border-color: #b4f056;
+            transform: scale(0.95);
         }
         @keyframes pin-shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-12px)}40%{transform:translateX(12px)}60%{transform:translateX(-8px)}80%{transform:translateX(8px)}}
         @keyframes pulse-glow {

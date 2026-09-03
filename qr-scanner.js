@@ -36,11 +36,6 @@ window.startScanner = function () {
         statusEl.style.color = '#b4f056';
     }
 
-    // Auto-show test sample QR immediately for easy 1-tap testing
-    if (typeof window.displayTestQR === 'function') {
-        window.displayTestQR('upi://pay?pa=freshmart@icici&pn=FreshMart%20Store&am=499.00&cu=INR&tn=Groceries', 'FreshMart ₹499');
-    }
-
     if (window.speak) window.speak("Scanner opened. Hold QR code in front of camera.");
 
     const onStreamReady = (stream) => {
@@ -332,15 +327,48 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
- * Instant 1-Tap Scannable QR Simulation in Scanner Screen
+ * Interactive Scannable Sample Merchant QR Codes
  */
 window.displayTestQR = function (upiUri, title) {
+    const modal = document.getElementById('sample-qr-modal');
+    const holder = document.getElementById('sample-qr-canvas-holder');
+    const titleEl = document.getElementById('sample-qr-title');
     const statusEl = document.getElementById('scan-status');
+
+    if (titleEl) {
+        titleEl.textContent = `Scannable QR: ${title || 'Merchant'}`;
+    }
+
     if (statusEl) {
-        statusEl.textContent = '✅ Scanned ' + (title || 'Merchant QR');
+        statusEl.textContent = `🎯 Scanning ${title || 'QR code'}...`;
         statusEl.style.color = '#b4f056';
     }
-    onScanSuccess(upiUri, statusEl);
+
+    if (modal && holder) {
+        modal.style.display = 'block';
+        holder.innerHTML = '';
+        if (typeof QRCode !== 'undefined') {
+            try {
+                new QRCode(holder, {
+                    text: upiUri,
+                    width: 158,
+                    height: 158,
+                    colorDark: '#000000',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.H
+                });
+            } catch (e) {
+                console.warn('QRCode render error:', e);
+            }
+        }
+    }
+
+    // Give visual animation time so the user sees the QR code and scanning feedback
+    setTimeout(() => {
+        if (window.isScannerActive) {
+            onScanSuccess(upiUri, statusEl);
+        }
+    }, 900);
 };
 
 window.simulateDirectScan = function (uri = 'upi://pay?pa=freshmart@icici&pn=FreshMart%20Store&am=499.00&cu=INR&tn=Groceries') {
