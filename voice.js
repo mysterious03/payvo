@@ -148,25 +148,62 @@ async function speakWithMurf(text, onEndCallback = null) {
     }
 }
 
+let lastSpokenText = '';
+let lastSpokenTime = 0;
+window.isAgentSpeaking = false;
+window.isUserSpeaking = false;
+
+window.stopSpeaking = function () {
+    window.isAgentSpeaking = false;
+    if (synth && synth.speaking) {
+        try { synth.cancel(); } catch (e) {}
+    }
+    if (typeof sarvamVoice !== 'undefined' && sarvamVoice.stop) {
+        try { sarvamVoice.stop(); } catch (e) {}
+    }
+};
+
 window.speak = async function (text, onEndCallback = null) {
-    if (!isVoiceEnabled) {
+    if (!text || !isVoiceEnabled) {
         if (onEndCallback) setTimeout(onEndCallback, 100);
         return;
     }
 
+    // 1. Never speak if user is recording in Voice Studio or currently talking
+    if ((window.voiceStudio && window.voiceStudio.isRecording) || window.isUserSpeaking) {
+        console.log("[voice.js] Suppressing TTS: User is recording or speaking.");
+        if (onEndCallback) setTimeout(onEndCallback, 100);
+        return;
+    }
+
+    // 2. Prevent repeating identical prompt within 3.5 seconds
+    const now = Date.now();
+    if (text === lastSpokenText && (now - lastSpokenTime) < 3500) {
+        if (onEndCallback) setTimeout(onEndCallback, 100);
+        return;
+    }
+    lastSpokenText = text;
+    lastSpokenTime = now;
+
+    window.stopSpeaking();
+    window.isAgentSpeaking = true;
     console.log("TTS Speaking:", text);
+
     if (typeof window.updateVoiceHUD === 'function') {
         window.updateVoiceHUD('speaking', text);
     }
 
-    // Temporarily pause recognition so mic does not hear itself
-    if (speechRec) { try { speechRec.stop(); } catch (e) { } }
+    // Temporarily pause speech recognition while assistant speaks to prevent mic feedback loop
+    if (speechRec) {
+        try { speechRec.stop(); } catch (e) {}
+    }
 
     const resumeListener = () => {
+        window.isAgentSpeaking = false;
         if (!isDedicatedListening && isVoiceEnabled) {
             setTimeout(() => {
-                if (speechRec && isVoiceEnabled && !isDedicatedListening) {
-                    try { speechRec.start(); } catch (e) { }
+                if (speechRec && isVoiceEnabled && !isDedicatedListening && !window.isAgentSpeaking) {
+                    try { speechRec.start(); } catch (e) {}
                     if (typeof window.updateVoiceHUD === 'function') {
                         window.updateVoiceHUD('listening');
                     }
@@ -503,7 +540,18 @@ window.initVoiceAssistant = function () {
     speechRec.interimResults = false;
     speechRec.lang = 'en-US';
 
+    speechRec.onspeechstart = () => {
+        window.isUserSpeaking = true;
+        // Barge-in: Cut off agent immediately when user starts speaking
+        window.stopSpeaking();
+    };
+
+    speechRec.onspeechend = () => {
+        window.isUserSpeaking = false;
+    };
+
     speechRec.onresult = (event) => {
+        window.isUserSpeaking = false;
         const last = event.results.length - 1;
         const command = event.results[last][0].transcript.toLowerCase().trim();
         console.log("Voice Command Recognized:", command);
