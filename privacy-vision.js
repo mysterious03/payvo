@@ -472,16 +472,21 @@
             this.listeners.forEach(fn => {
                 try { fn(status); } catch (e) {}
             });
-        }
-
         async start(options = {}) {
             if (this.isRunning) return;
+
+            // Do not start if QR scanner is currently active
+            if (window.isScannerActive || (typeof document !== 'undefined' && document.querySelector('.screen.active')?.id === 'scan-screen')) {
+                console.log('[PrivacyVision-ML] Scanner is active. Yielding camera access.');
+                return;
+            }
+
             this.isRunning = true;
             this.debugMode = Boolean(options.showDebugCanvas);
 
             await this.loadModel();
 
-            // Acquire camera via CameraManager or direct getUserMedia
+            // Acquire camera cleanly
             let videoEl = document.getElementById('privacy-front-video');
             if (!videoEl) {
                 videoEl = document.createElement('video');
@@ -503,17 +508,18 @@
                     videoEl.srcObject = stream;
                 } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                     const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { facingMode: 'user', width: 320, height: 240 },
+                        video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 240 } },
                         audio: false
                     });
                     videoEl.srcObject = stream;
                 }
             } catch (err) {
-                console.warn('[PrivacyVision-ML] Camera stream error:', err);
+                console.warn('[PrivacyVision-ML] Camera stream error (yielding):', err);
             }
 
+            if (this.timer) clearInterval(this.timer);
             this.timer = setInterval(() => {
-                if (this.isRunning && videoEl) {
+                if (this.isRunning && videoEl && !window.isScannerActive) {
                     this.processFrame(videoEl);
                 }
             }, this.config.inferenceIntervalMs);
@@ -528,6 +534,14 @@
             if (typeof CameraManager !== 'undefined' && CameraManager.releaseStream) {
                 CameraManager.releaseStream('privacy_vision');
             }
+            const videoEl = document.getElementById('privacy-front-video');
+            if (videoEl && videoEl.srcObject) {
+                try {
+                    videoEl.srcObject.getTracks().forEach(t => t.stop());
+                } catch (e) {}
+                videoEl.srcObject = null;
+            }
+        } }
             const videoEl = document.getElementById('privacy-front-video');
             if (videoEl && videoEl.srcObject) {
                 videoEl.srcObject.getTracks().forEach(t => t.stop());
