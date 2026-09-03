@@ -436,30 +436,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const recordBtn = document.getElementById('btn-studio-record');
     let recordTimer = null;
+    let countdownInterval = null;
 
     if (recordBtn) {
         const start = async () => {
             if (!window.voiceStudio || window.voiceStudio.isRecording) return;
-            await window.voiceStudio.startRecording();
-            recordBtn.textContent = '⏹️ Recording (Speak now... Tap to finish)';
+            recordBtn.textContent = '⏳ Accessing mic...';
+            recordBtn.style.background = '#fbbf24';
+            recordBtn.style.color = '#000';
+
+            const success = await window.voiceStudio.startRecording();
+            if (!success) {
+                recordBtn.textContent = '🔴 Record Sample (Hold / Click)';
+                recordBtn.style.background = '#b4f056';
+                recordBtn.style.color = '#000';
+                return;
+            }
+
+            let timeLeft = 3;
+            recordBtn.textContent = `⏹️ Recording... (${timeLeft}s - Tap to finish)`;
             recordBtn.style.background = '#ef4444';
             recordBtn.style.color = '#fff';
 
-            // Auto-stop after 3.2 seconds if user doesn't tap stop
+            if (countdownInterval) clearInterval(countdownInterval);
+            countdownInterval = setInterval(() => {
+                timeLeft--;
+                if (timeLeft > 0) {
+                    recordBtn.textContent = `⏹️ Recording... (${timeLeft}s - Tap to finish)`;
+                } else {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                }
+            }, 1000);
+
             if (recordTimer) clearTimeout(recordTimer);
             recordTimer = setTimeout(() => {
                 stop();
             }, 3200);
         };
 
-        const stop = () => {
+        const stop = async () => {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+                countdownInterval = null;
+            }
             if (recordTimer) {
                 clearTimeout(recordTimer);
                 recordTimer = null;
             }
+            recordBtn.textContent = '⏳ Processing audio...';
+            recordBtn.style.background = '#94a3b8';
+            recordBtn.style.color = '#000';
+
             if (window.voiceStudio && window.voiceStudio.isRecording) {
-                window.voiceStudio.stopRecording();
+                await window.voiceStudio.stopRecording();
             }
+
             recordBtn.textContent = '🔴 Record Sample (Hold / Click)';
             recordBtn.style.background = '#b4f056';
             recordBtn.style.color = '#000';

@@ -1,5 +1,5 @@
 // voice-studio.js - Professional Multi-Sample Voice Biometrics & Dataset Recording Studio for VoxPay
-// Real-time 16kHz PCM Float32 capture, Audio Waveform Visualizer, Sample Bank, WAV Exporter & Model Trainer
+// Dual Pipeline: MediaRecorder + Web Audio Analyser Visualizer with Resumed AudioContext & PCM 16kHz Decoder
 
 (function (global) {
     'use strict';
@@ -19,15 +19,14 @@
 
     class VoiceStudio {
         constructor() {
-            this.recordedSamples = []; // { id, name, phrase, pcmFloat32, sampleRate, durationSec, snrDb, timestamp, audioUrl }
+            this.recordedSamples = [];
             this.isRecording = false;
             this.audioCtx = null;
-            this.stream = null;
-            this.processor = null;
-            this.source = null;
+            this.mediaStream = null;
+            this.mediaRecorder = null;
+            this.audioChunks = [];
             this.analyser = null;
             this.animationId = null;
-            this.currentPCM = [];
             this.recordStartTime = 0;
             this.selectedPhraseIndex = 0;
             this.storageKey = 'voxpay_studio_samples_v1';
@@ -74,10 +73,11 @@
 
         async startRecording() {
             if (this.isRecording) return;
-            this.currentPCM = [];
+            this.audioChunks = [];
 
             try {
-                this.stream = await navigator.mediaDevices.getUserMedia({
+                // 1. Request microphone access
+                this.mediaStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         echoCancellation: true,
                         noiseSuppression: false,
@@ -85,34 +85,51 @@
                     }
                 });
 
-                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                this.source = this.audioCtx.createMediaStreamSource(this.stream);
+                // 2. Initialize AudioContext and force resume
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                this.audioCtx = new AudioContextClass();
+                if (this.audioCtx.state === 'suspended') {
+                    await this.audioCtx.resume();
+                }
+
+                // 3. Connect Analyser for Live Oscilloscope
+                const source = this.audioCtx.createMediaStreamSource(this.mediaStream);
                 this.analyser = this.audioCtx.createAnalyser();
                 this.analyser.fftSize = 256;
+                source.connect(this.analyser);
 
-                this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
-                this.processor.onaudioprocess = (e) => {
-                    if (!this.isRecording) return;
-                    const input = e.inputBuffer.getChannelData(0);
-                    this.currentPCM.push(...input);
+                // 4. Initialize MediaRecorder
+                let mimeType = 'audio/webm';
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mimeType = 'audio/webm;codecs=opus';
+                } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
+                    mimeType = 'audio/ogg;codecs=opus';
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    mimeType = 'audio/mp4';
+                }
+
+                this.mediaRecorder = new MediaRecorder(this.mediaStream, { mimeType });
+                this.mediaRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) {
+                        this.audioChunks.push(e.data);
+                    }
                 };
 
-                this.source.connect(this.analyser);
-                this.analyser.connect(this.processor);
-                this.processor.connect(this.audioCtx.destination);
-
+                this.mediaRecorder.start(100);
                 this.isRecording = true;
                 this.recordStartTime = Date.now();
 
                 this._drawWaveform();
                 this._notifyUI();
+                return true;
             } catch (err) {
                 console.error('[VoiceStudio] Microphone access error:', err);
-                alert('Microphone error: ' + err.message);
+                alert('Microphone access denied or error: ' + err.message);
+                return false;
             }
         }
 
-        stopRecording() {
+        async stopRecording() {
             if (!this.isRecording) return;
             this.isRecording = false;
 
@@ -121,59 +138,108 @@
                 this.animationId = null;
             }
 
-            if (this.processor) {
-                this.processor.disconnect();
-                this.processor = null;
+            return new Promise((resolve) => {
+                if (!this.mediaRecorder) {
+                    this._cleanStream();
+                    resolve(null);
+                    return;
+                }
+
+                this.mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(this.audioChunks, { type: this.mediaRecorder.mimeType || 'audio/webm' });
+                    this._cleanStream();
+
+                    try {
+                        // Decode audio into PCM Float32 Array
+                        const arrayBuffer = await audioBlob.arrayBuffer();
+                        const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+
+                        // Resample / extract 16kHz mono Float32
+                        const pcm = this._resampleTo16kMono(audioBuffer);
+
+                        if (pcm.length < 8000) { // < 0.5s
+                            alert('Audio sample was too short. Please speak the phrase clearly for 1-2 seconds.');
+                            this._notifyUI();
+                            resolve(null);
+                            return;
+                        }
+
+                        const durationSec = parseFloat((pcm.length / 16000).toFixed(2));
+                        const snrDb = this._estimateSNR(pcm);
+                        const phrase = PHRASES[this.selectedPhraseIndex] || 'Custom Sample';
+                        const sampleId = 'sample_' + Date.now();
+
+                        // Create WAV Blob for instant clean playback
+                        const wavBlob = this.encodeWAV(pcm, 16000);
+                        const audioUrl = URL.createObjectURL(wavBlob);
+
+                        const sample = {
+                            id: sampleId,
+                            name: `Sample #${this.recordedSamples.length + 1}`,
+                            phrase: phrase,
+                            pcmFloat32: pcm,
+                            sampleRate: 16000,
+                            durationSec: durationSec,
+                            snrDb: snrDb,
+                            timestamp: new Date().toLocaleTimeString(),
+                            audioUrl: audioUrl,
+                            wavBlob: wavBlob
+                        };
+
+                        this.recordedSamples.push(sample);
+                        this._saveStoredSamples();
+
+                        // Rotate to next prompt phrase
+                        this.selectedPhraseIndex = (this.selectedPhraseIndex + 1) % PHRASES.length;
+
+                        this._notifyUI();
+
+                        if (window.speak) {
+                            window.speak(`Sample recorded. Total samples: ${this.recordedSamples.length}.`);
+                        }
+                        resolve(sample);
+                    } catch (decodeErr) {
+                        console.error('[VoiceStudio] Decode error:', decodeErr);
+                        alert('Could not decode audio: ' + decodeErr.message);
+                        this._notifyUI();
+                        resolve(null);
+                    }
+                };
+
+                this.mediaRecorder.stop();
+            });
+        }
+
+        _cleanStream() {
+            if (this.mediaStream) {
+                this.mediaStream.getTracks().forEach(t => t.stop());
+                this.mediaStream = null;
             }
-            if (this.source) {
-                this.source.disconnect();
-                this.source = null;
+            if (this.audioCtx) {
+                try { this.audioCtx.close(); } catch (e) {}
+                this.audioCtx = null;
             }
-            if (this.stream) {
-                this.stream.getTracks().forEach(t => t.stop());
-                this.stream = null;
+        }
+
+        _resampleTo16kMono(audioBuffer) {
+            const raw = audioBuffer.getChannelData(0);
+            const srcRate = audioBuffer.sampleRate;
+            const targetRate = 16000;
+
+            if (srcRate === targetRate) {
+                return raw;
             }
 
-            const pcm = new Float32Array(this.currentPCM);
-            if (pcm.length < 8000) { // Less than 0.5s
-                alert('Sample was too short. Please speak clearly for at least 1-2 seconds.');
-                this._notifyUI();
-                return;
+            const ratio = srcRate / targetRate;
+            const newLength = Math.round(raw.length / ratio);
+            const result = new Float32Array(newLength);
+
+            for (let i = 0; i < newLength; i++) {
+                const srcIdx = Math.min(raw.length - 1, Math.round(i * ratio));
+                result[i] = raw[srcIdx];
             }
-
-            const durationSec = parseFloat((pcm.length / 16000).toFixed(2));
-            const snrDb = this._estimateSNR(pcm);
-            const phrase = PHRASES[this.selectedPhraseIndex] || 'Custom Sample';
-            const sampleId = 'sample_' + Date.now();
-
-            // Create Audio Blob for instant playback
-            const wavBlob = this.encodeWAV(pcm, 16000);
-            const audioUrl = URL.createObjectURL(wavBlob);
-
-            const sample = {
-                id: sampleId,
-                name: `Sample #${this.recordedSamples.length + 1}`,
-                phrase: phrase,
-                pcmFloat32: pcm,
-                sampleRate: 16000,
-                durationSec: durationSec,
-                snrDb: snrDb,
-                timestamp: new Date().toLocaleTimeString(),
-                audioUrl: audioUrl,
-                wavBlob: wavBlob
-            };
-
-            this.recordedSamples.push(sample);
-            this._saveStoredSamples();
-
-            // Rotate phrase
-            this.selectedPhraseIndex = (this.selectedPhraseIndex + 1) % PHRASES.length;
-
-            this._notifyUI();
-
-            if (window.speak) {
-                window.speak(`Sample recorded. Total samples: ${this.recordedSamples.length}.`);
-            }
+            return result;
         }
 
         deleteSample(id) {
@@ -354,14 +420,13 @@
         _notifyUI() {
             if (typeof document === 'undefined') return;
 
-            // Update sample count & accuracy badge
             const countEl = document.getElementById('studio-sample-count');
             const badgeEl = document.getElementById('studio-accuracy-badge');
             const phraseEl = document.getElementById('studio-prompt-phrase');
             const listEl = document.getElementById('studio-samples-list');
 
             const count = this.recordedSamples.length;
-            if (countEl) countEl.textContent = `${count} Samples`;
+            if (countEl) countEl.textContent = `Recorded Samples (${count})`;
 
             if (badgeEl) {
                 if (count === 0) {
@@ -387,7 +452,7 @@
                 if (count === 0) {
                     listEl.innerHTML = `
                         <div style="text-align:center; padding: 24px 10px; color: rgba(255,255,255,0.4); font-size: 13px;">
-                            🎙️ No voice samples recorded yet.<br>Click <b>"Start Recording"</b> below to capture your first sample!
+                            🎙️ No voice samples recorded yet.<br>Click <b>"🔴 Record Sample"</b> below to start!
                         </div>
                     `;
                 } else {
@@ -420,7 +485,6 @@
     const voiceStudio = new VoiceStudio();
     global.voiceStudio = voiceStudio;
 
-    // Window helpers
     global.playStudioSample = function (id) {
         const sample = voiceStudio.recordedSamples.find(s => s.id === id);
         if (sample && sample.audioUrl) {
