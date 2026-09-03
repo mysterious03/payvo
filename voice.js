@@ -154,10 +154,34 @@ window.speak = async function (text, onEndCallback = null) {
         return;
     }
 
+    console.log("TTS Speaking:", text);
+    if (typeof window.updateVoiceHUD === 'function') {
+        window.updateVoiceHUD('speaking', text);
+    }
+
+    // Temporarily pause recognition so mic does not hear itself
+    if (speechRec) { try { speechRec.stop(); } catch (e) { } }
+
+    const resumeListener = () => {
+        if (!isDedicatedListening && isVoiceEnabled) {
+            setTimeout(() => {
+                if (speechRec && isVoiceEnabled && !isDedicatedListening) {
+                    try { speechRec.start(); } catch (e) { }
+                    if (typeof window.updateVoiceHUD === 'function') {
+                        window.updateVoiceHUD('listening');
+                    }
+                }
+            }, 300);
+        }
+        if (typeof onEndCallback === 'function') {
+            onEndCallback();
+        }
+    };
+
     // Try Sarvam AI first for natural Indian voice
     if (typeof sarvamVoice !== 'undefined' && sarvamVoice.speak) {
         try {
-            await sarvamVoice.speak(text, onEndCallback);
+            await sarvamVoice.speak(text, resumeListener);
             return;
         } catch (e) {
             console.warn('[voice.js] Sarvam speech failed, falling back:', e);
@@ -165,7 +189,7 @@ window.speak = async function (text, onEndCallback = null) {
     }
 
     // Fallback to Native Speech
-    window.speakNative(text, onEndCallback);
+    window.speakNative(text, resumeListener);
 };
 
 /**
@@ -391,6 +415,65 @@ function parseNumber(text) {
     return null;
 }
 
+// Live Voice HUD Manager
+window.updateVoiceHUD = function (state, text = '') {
+    let hud = document.getElementById('voice-live-hud');
+    if (!hud) {
+        hud = document.createElement('div');
+        hud.id = 'voice-live-hud';
+        hud.style.cssText = `
+            position: fixed;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10000;
+            background: rgba(10, 15, 26, 0.95);
+            border: 1px solid rgba(180, 240, 86, 0.4);
+            border-radius: 99px;
+            padding: 8px 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 700;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.6), 0 0 15px rgba(180, 240, 86, 0.2);
+            backdrop-filter: blur(12px);
+            max-width: 90%;
+            pointer-events: auto;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        `;
+        hud.onclick = () => {
+            if (speechRec && isVoiceEnabled) {
+                try { speechRec.start(); } catch(e) {}
+                window.updateVoiceHUD('listening');
+            } else {
+                window.initVoiceAssistant();
+            }
+        };
+        document.body.appendChild(hud);
+    }
+
+    if (state === 'listening') {
+        hud.innerHTML = `
+            <span style="width:10px; height:10px; border-radius:50%; background:#b4f056; box-shadow:0 0 10px #b4f056; animation:pulse-glow 1s infinite;"></span>
+            <span style="color:#b4f056;">🎙️ Listening... (Ask anything)</span>
+        `;
+    } else if (state === 'heard') {
+        hud.innerHTML = `
+            <span style="width:10px; height:10px; border-radius:50%; background:#38bdf8;"></span>
+            <span style="color:#38bdf8;">💬 "${text}"</span>
+        `;
+    } else if (state === 'speaking') {
+        const shortText = text.length > 40 ? text.substring(0, 37) + '...' : text;
+        hud.innerHTML = `
+            <span style="width:10px; height:10px; border-radius:50%; background:#10b981; animation:pulse-glow 0.8s infinite;"></span>
+            <span style="color:#10b981;">🔊 ${shortText}</span>
+        `;
+    }
+};
+
 // Initialize Speech Recognition
 window.initVoiceAssistant = function () {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -410,25 +493,26 @@ window.initVoiceAssistant = function () {
         const last = event.results.length - 1;
         const command = event.results[last][0].transcript.toLowerCase().trim();
         console.log("Voice Command Recognized:", command);
+        if (typeof window.updateVoiceHUD === 'function') {
+            window.updateVoiceHUD('heard', command);
+        }
         handleVoiceCommand(command);
     };
 
     speechRec.onerror = (event) => {
         console.log("Speech recognition error:", event.error);
-
         if (event.error === 'not-allowed') {
             isVoiceEnabled = false;
-            localStorage.setItem('swiftpass_voice_enabled', 'false');
             alert("Microphone access was denied. Please click the site settings icon in your URL bar and allow microphone access to use the Voice Assistant.");
-        } else if (event.error === 'network') {
-            alert("Voice recognition requires an internet connection or secure context (localhost / https).");
         }
     };
 
-    // Auto-restart if it stops unexpectedly while enabled
     speechRec.onend = () => {
         if (isVoiceEnabled && !isDedicatedListening) {
             try { speechRec.start(); } catch (e) { }
+            if (typeof window.updateVoiceHUD === 'function') {
+                window.updateVoiceHUD('listening');
+            }
         }
     };
 
@@ -439,14 +523,13 @@ window.initVoiceAssistant = function () {
             btn.innerHTML = '🎙️ Voice Active';
             btn.classList.add('active');
         }
-
-        // Save preference so it auto-starts on reload
+        if (typeof window.updateVoiceHUD === 'function') {
+            window.updateVoiceHUD('listening');
+        }
         localStorage.setItem('swiftpass_voice_enabled', 'true');
-
-        window.speak("Welcome to Swift Pass. Say 'open QR code scanner' to start a payment.");
+        window.speak("Welcome to Swift Pass. You can ask for your balance, recent activity, or generate a QR code.");
     } catch (e) {
-        console.error("Could not start recognition. This may be due to browser security blocking microphone access without a click Event.", e);
-        alert("Failed to start microphone. Please ensure you are running on localhost, or tap the screen again.");
+        console.error("Could not start recognition:", e);
     }
 };
 
