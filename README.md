@@ -1,204 +1,293 @@
 <div align="center">
 
-# ⚡ VoxPay (SwiftPass)
-### *Next-Generation Accessibility-First & Privacy-Preserving UPI Platform*
+  <!-- HERO LOGO & TITLE -->
+  <img src="https://img.shields.io/badge/VoxPay-⚡_SwiftPass-10b981?style=for-the-badge&logo=cashapp&logoColor=white" height="40" alt="VoxPay Logo" />
+  
+  # ⚡ VoxPay (SwiftPass)
+  ### *The World's First Accessibility-First, Privacy-Preserving AI Voice UPI Platform*
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg?style=for-the-badge&logo=github)](https://github.com/mysterious03/payvo)
-[![Privacy First](https://img.shields.io/badge/Privacy-100%25%20On--Device-10b981.svg?style=for-the-badge&logo=shield)](https://github.com/mysterious03/payvo)
-[![Deterministic Engine](https://img.shields.io/badge/State%20Machine-17%20States-blueviolet.svg?style=for-the-badge)](https://github.com/mysterious03/payvo)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+  <p align="center">
+    <b>Empowering visually impaired, motor-disabled, and elderly individuals to make 100% autonomous, safe, and touchless UPI payments.</b>
+  </p>
 
-<p align="center">
-  <b>Empowering visually impaired, motor-disabled, and elderly users with a truly autonomous, secure, and intuitive UPI payment experience.</b><br>
-  <i>Zero touch required. Zero cloud exposure. Uncompromised financial safety.</i>
-</p>
+  <!-- BADGES ROW -->
+  <p align="center">
+    <a href="https://github.com/mysterious03/payvo"><img src="https://img.shields.io/badge/Privacy-100%25_On--Device-10b981?style=flat-square&logo=shield" alt="On-Device Privacy" /></a>
+    <a href="https://github.com/mysterious03/payvo"><img src="https://img.shields.io/badge/AI_Biometrics-ECAPA--TDNN-8b5cf6?style=flat-square&logo=soundcharts" alt="Speaker Biometrics" /></a>
+    <a href="https://github.com/mysterious03/payvo"><img src="https://img.shields.io/badge/Vision_AI-COCO--SSD_MobileNet-f59e0b?style=flat-square&logo=tensorflow" alt="Privacy Vision" /></a>
+    <a href="https://github.com/mysterious03/payvo"><img src="https://img.shields.io/badge/State_Safety-17_State_Machine-3b82f6?style=flat-square&logo=diagram-next" alt="State Machine" /></a>
+    <a href="https://github.com/mysterious03/payvo"><img src="https://img.shields.io/badge/Test_Suite-204_Passed-22c55e?style=flat-square&logo=checkmarx" alt="Tests" /></a>
+    <a href="https://github.com/mysterious03/payvo"><img src="https://img.shields.io/badge/License-MIT-gray?style=flat-square" alt="License" /></a>
+  </p>
 
----
+  <p align="center">
+    <a href="#-quick-demo--how-it-works"><b>⚡ How It Works</b></a> •
+    <a href="#-key-features"><b>✨ Features</b></a> •
+    <a href="#-why-voxpay"><b>💡 Why VoxPay?</b></a> •
+    <a href="#-architecture--safety"><b>🛡️ Safety Architecture</b></a> •
+    <a href="#-quick-start"><b>🚀 Quick Start</b></a> •
+    <a href="#-project-structure"><b>📁 Project Map</b></a>
+  </p>
 
 </div>
 
-## 🌟 Executive Summary
+---
 
-**VoxPay** (formerly SwiftPass) is an accessibility-first Progressive Web Application (PWA) re-imagining Unified Payments Interface (UPI) interactions. Traditional financial applications depend heavily on visual acuity, fine motor precision, and vulnerable PIN entry in public spaces. VoxPay solves this through a synergy of **deterministic state safety**, **on-device computer vision**, **voice biometrics**, and **accessible multimodal interfaces**.
+## 💡 Why VoxPay? (The Problem We Solve)
+
+<table>
+  <tr>
+    <th width="50%">❌ Traditional UPI Apps (GPay, PhonePe, Paytm)</th>
+    <th width="50%">✅ VoxPay (SwiftPass)</th>
+  </tr>
+  <tr>
+    <td>
+      <ul>
+        <li>Requires precise screen tapping & sight.</li>
+        <li>PIN entry is vulnerable to shoulder-surfing in public.</li>
+        <li>Complex multi-screen navigation confuses elderly users.</li>
+        <li>Accidental touches can cause irreversible transfers.</li>
+        <li>Relies heavily on visual confirmation.</li>
+      </ul>
+    </td>
+    <td>
+      <ul>
+        <li><b>100% Voice-Guided</b> conversational payment flow.</li>
+        <li><b>On-Device Computer Vision</b> warns if someone peeks over your shoulder.</li>
+        <li><b>Voice Biometrics (ECAPA-TDNN)</b> ensures only the enrolled owner can pay.</li>
+        <li><b>3-Second Safety Undo Window</b> allows instant payment cancellation.</li>
+        <li><b>Draw-to-PIN & Tactile Gestures</b> for accessible authentication.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 ---
 
-## 🏛️ System Architecture
+## ⚡ Quick Demo — How It Works in 4 Steps
 
-```text
-                               ┌──────────────────────────────────────────────┐
-                               │             Hardware Input Layers            │
-                               │  [Camera Stream]        [Microphone Stream]  │
-                               └───────┬───────────────────────────┬──────────┘
-                                       │                           │
-                                       ▼                           ▼
-                        ┌──────────────────────────────┐  ┌──────────────────────────────┐
-                        │        CameraManager         │  │    Web Speech API + TTS      │
-                        │   (Unified Resource Pool)    │  │  (Conversational Guidance)   │
-                        └───────┬──────────────┬───────┘  └──────────────┬───────────────┘
-                                │              │                         │
-                 ┌──────────────┘              └──────────────┐          │
-                 ▼                                            ▼          ▼
-  ┌──────────────────────────────┐             ┌──────────────────────────────┐
-  │   On-Device Privacy Vision   │             │   Authorized-Speaker Layer   │
-  │     (COCO-SSD MobileNet)     │             │    (ECAPA-TDNN Biometrics)   │
-  │  • Observer Bounding Boxes   │             │  • 80 Log-Mel + MFCC + TDNN  │
-  │  • Spatial Proximity Filters │             │  • VAD & SNR Quality Gating  │
-  │  • Anti-Shoulder-Surfing     │             │  • Zero Raw Audio Storage    │
-  └──────────────┬───────────────┘             └──────────────┬───────────────┘
-                 │                                            │
-                 │     ┌──────────────────────────────┐       │
-                 └────►│    Smart QR & URI Parser     │◄──────┘
-                       │   (Deterministic Validator)  │
-                       │  • Scheme & Payload Gating   │
-                       │  • Duplicate Param Immunity  │
-                       │  • XSS & URL Neutralization  │
-                       └──────────────┬───────────────┘
-                                      │
-                                      ▼
-                       ┌──────────────────────────────┐
-                       │  Transaction State Machine   │
-                       │     (Deterministic Core)     │
-                       │  • 17 Monotonic States       │
-                       │  • 3-Second Undo Window      │
-                       │  • Draw-to-PIN & Ledger Lock │
-                       └──────────────────────────────┘
+<div align="center">
+
+```
+  ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+  │  1. Scan / Say  │ ───►  │  2. Identity    │ ───►  │  3. Safety Undo │ ───►  │  4. Draw-to-PIN │
+  │ "Pay 500 to     │       │ Real-Time Voice │       │ 3-Second Grace  │       │ Neural Stroke / │
+  │  Ravi Stores"   │       │ Biometrics Check│       │ Cancel Window   │       │ Tactile Auth    │
+  └─────────────────┘       └─────────────────┘       └─────────────────┘       └─────────────────┘
+           │                         │                         │                         │
+      🎤 Voice / QR             👤 ECAPA-TDNN             ⏱️ Undo Timer             ✍️ AI Gesture
 ```
 
----
+</div>
 
-## 🚀 Key Feature Pillars
-
-### 1. 🛡️ On-Device Real-Time Privacy Vision (Anti-Shoulder-Surfing)
-* **Neural Architecture**: Runs TensorFlow.js COCO-SSD MobileNet-v2 directly in the browser with zero cloud telemetry.
-* **Proximity & Geometric Filtering**: Differentiates between the authorized user and secondary observers using bounding box area ($>3.5\%$ frame area), aspect ratio, and Euclidean centroid offsets.
-* **Temporal Hysteresis**: 3-frame persistence filter eliminates transient false triggers.
-* **Accessible Cues**: Immediate audible speech warnings (`"Warning: Someone may be looking over your shoulder"`) and non-intrusive `aria-live` status regions.
-* **Camera Lifecycle**: Built upon `CameraManager` to dynamically share, mute, and release camera tracks without resource contention.
-
-### 2. 👤 Authorized-Speaker Voice Identity Layer (ECAPA-TDNN)
-* **Acoustic Front-End**: In-place Radix-2 512-point FFT, Pre-Emphasis ($y[n] = x[n] - 0.97 x[n-1]$), Hamming windowing, and 80 Log-Mel triangular filterbanks (20 Hz–8000 Hz).
-* **Deep Embedding Extractor**: 40-channel MFCCs, Multi-scale Dilated Convolutions, Squeeze-and-Excitation (SE) channel attention, and Attentive Statistical Pooling (ASP) outputting a unit L2-normalized 192-dimensional vector.
-* **Robust VAD & SNR Gating**: Energy quantile noise floor tracking. Clips under 800ms or $<6.0$ dB SNR are gracefully evaluated as `UNCERTAIN` (`low_audio_quality`), never falsely rejected as impostors.
-* **Strict Privacy Guarantee**: Zero raw audio recordings are stored in memory or persistent storage. Profile centroids are stored purely as mathematical biometric vectors.
-
-### 3. ⚡ Smart QR & Secure UPI URI Parser
-* **Deterministic Parsing**: Validates NPCI UPI Intent specifications (`upi://pay`) without untrusted regular expressions or AI hallucinations.
-* **Parameter Pollution Immunity**: Rejects malicious duplicate critical query parameters (e.g. `am=500&am=5000` or `pa=x@upi&pa=y@upi`).
-* **Fixed vs. Open Amount Modes**: Explicitly isolates fixed merchant QR amounts from open-amount dynamic QR codes, preventing silent client-side tampering.
-* **XSS & HTML Neutralization**: Strips HTML tags and control sequences, rendering metadata exclusively via secure DOM properties (`textContent`).
-
-### 4. 🔒 Deterministic Transaction Safety Engine
-* **17-State Lifecycle State Machine**: Enforces strict linear progression:
-  $$\text{IDLE} \to \text{INTENT\_RECEIVED} \to \text{RECIPIENT\_RESOLVED} \to \text{RECIPIENT\_VERIFIED} \to \text{AMOUNT\_RESOLVED} \to \text{PAYMENT\_DIRECTION\_VERIFIED} \to \text{RISK\_CHECK} \to \text{USER\_CONFIRMATION} \to \text{UNDO\_WINDOW} \to \text{SECURE\_AUTHENTICATION} \to \text{PAYMENT\_INITIATED} \to \text{RESULT\_VERIFICATION} \to \text{SUCCESS}$$
-* **Fail-Closed Security**: In-flight transactions cannot be mutated or cancelled once authentication passes to `PAYMENT_INITIATED`.
-* **3-Second Universal Undo Window**: Provides a dedicated grace period allowing users to cancel unintended payments before ledger commits.
-
-### 5. ✍️ Draw-to-PIN & Accessible Authentication
-* **Tactile Stroke Classifier**: Machine learning stroke pattern recognizer enabling users to authenticate by drawing gestures or digits on any touch surface.
-* **Accessible Fallbacks**: High-contrast, large-target Tap-to-PIN layout for users with varying mobility profiles.
+1. 🗣️ **Say or Scan**: *"Pay 500 rupees to Ramesh"* or point the camera at any merchant UPI QR.
+2. 👤 **Speaker Verification**: VoxPay verifies your acoustic vocal profile in milliseconds on-device.
+3. 👁️ **Privacy Shield Active**: The front camera monitors for observers and alerts you if anyone looks over your shoulder.
+4. 🔒 **Confirm & Authenticate**: Audible audio feedback reads the details, gives a 3-second undo window, and prompts your PIN/Draw gesture.
 
 ---
 
-## 📊 Security & Design Invariants
+## ✨ Key Features
 
-| Security Rule | Guarantee | Enforcement Mechanism |
-| :--- | :--- | :--- |
-| **No Auto-Payment** | Scanning a QR or matching a voice command **NEVER** directly triggers payment. | Explicit state transition through `USER_CONFIRMATION` + `UNDO_WINDOW` + PIN. |
-| **No Raw Audio Storage** | Microphone buffers are transiently analyzed in memory and immediately discarded. | `SpeakerProfileStore` stores only 192-dim L2 unit vectors. |
-| **No External Navigation** | QR codes containing `url=https://...` cannot trigger browser redirects. | Parameter extracted purely as diagnostic warning; navigation is strictly blocked. |
-| **Fail-Closed Verification**| Unenrolled users or degraded signals cannot silently authorize transactions. | Speaker verification requires $\ge 3$ enrolled samples; un-enrolled states reject sensitive commands. |
-| **No Floating-Point Drift**| Transaction amounts are normalized and validated to 2 decimal places ($₹0.01 - ₹1,00,000$). | Fixed string-to-numeric normalization and bounded NPCI limit checks. |
+<table width="100%">
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🎙️ 1. Conversational Voice AI</h3>
+      <ul>
+        <li>Natural speech understanding powered by the <b>Web Speech API</b>.</li>
+        <li>Full speech feedback (TTS) with crystal-clear audible step-by-step instructions.</li>
+        <li>Complete hands-free navigation for users with motor disabilities.</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>👤 2. Voice Biometrics (ECAPA-TDNN)</h3>
+      <ul>
+        <li><b>Client-Side Deep Learning</b>: 80 Log-Mel filterbanks + MFCC + Attentive Statistical Pooling (ASP).</li>
+        <li><b>192-dim Voice Embeddings</b>: Compares acoustic vocal tract resonances against your profile.</li>
+        <li><b>Zero Raw Audio Storage</b>: Microphone audio is never stored or transmitted to any server.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>👁️ 3. Anti-Shoulder-Surfing Privacy Vision</h3>
+      <ul>
+        <li>On-device <b>TensorFlow.js COCO-SSD</b> person detection.</li>
+        <li>Geometric proximity & 3-frame persistence filter to detect eavesdroppers.</li>
+        <li>Speaks immediate warning: <i>"Warning: Someone may be looking over your shoulder."</i></li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>⚡ 4. Smart QR & Secure UPI Parser</h3>
+      <ul>
+        <li>Deterministic <code>upi://pay</code> parser with NPCI spec compliance.</li>
+        <li><b>Parameter Pollution Immunity</b> (blocks duplicate injection attacks like <code>am=500&am=5000</code>).</li>
+        <li>Protects against malicious external redirects and XSS.</li>
+      </ul>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>⏱️ 5. Deterministic Safety Engine</h3>
+      <ul>
+        <li><b>17 Monotonic States</b>: Guarantees no payment executes without full validation.</li>
+        <li><b>3-Second Undo Window</b>: Easily cancel any accidental payment before it commits.</li>
+        <li><b>Immutable Ledger</b>: Local transaction storage with live balance tracking.</li>
+      </ul>
+    </td>
+    <td width="50%" valign="top">
+      <h3>✍️ 6. Accessible Draw-to-PIN & Tap-to-PIN</h3>
+      <ul>
+        <li>Neural stroke classifier lets users draw gestures anywhere on screen to enter their PIN.</li>
+        <li>High-contrast tactile numpad with screen-reader friendly <code>aria-live</code> feedback.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 ---
 
-## 🧪 Comprehensive Test Suites
+## 🛡️ Architecture & Safety
 
-VoxPay includes comprehensive standalone verification test suites covering all safety layers:
+<details>
+<summary><b>🔍 Click to Expand Technical Architecture Diagram</b></summary>
+
+```
+CAMERA HARDWARE                        MICROPHONE HARDWARE
+      │                                         │
+      ▼                                         ▼
+CameraManager (Shared Stream)            Web Speech API + VAD
+  ├── Privacy Vision (COCO-SSD)            ├── Voice Commands Router
+  └── QR Scanner (jsQR / Barcode)          └── ECAPA-TDNN Speaker Verification
+      │                                         │
+      └──────────────────┬──────────────────────┘
+                         │
+                         ▼
+             Smart QR & Intent Validator
+                         │
+                         ▼
+         Deterministic Transaction State Machine
+     ┌───────────────────────────────────────────────┐
+     │ IDLE                                          │
+     │   └─► INTENT_RECEIVED                         │
+     │         └─► RECIPIENT_RESOLVED                │
+     │               └─► AMOUNT_RESOLVED             │
+     │                     └─► RISK_CHECK            │
+     │                           └─► USER_CONFIRM    │
+     │                                 └─► UNDO (3s) │
+     │                                       └─► PIN │
+     │                                            │  │
+     │                                         SUCCESS
+     └───────────────────────────────────────────────┘
+```
+</details>
+
+---
+
+## 🧪 Rigorous Automated Testing (204 Tests)
+
+VoxPay is built with production-grade deterministic reliability. Every layer is covered by standalone unit and calibration test suites:
 
 ```bash
-# 1. Deterministic Smart QR & URI Security Parser (88 tests)
-node test_smart_qr_parser.js
-
-# 2. ECAPA-TDNN Speaker Verification & VAD Suite (47 tests)
-node test_speaker_verification.js
-
-# 3. Privacy Vision & Neural Observer Detection Suite (23 tests)
-node test_privacy_vision.js
-
-# 4. Neural Draw-to-PIN Classifier Suite
-node test_pin.js
-
-# 5. Deterministic Transaction State Machine Suite (34 tests)
-node test_state_machine.js
+# Run all test suites in one command
+node test_smart_qr_parser.js ; node test_speaker_verification.js ; node test_privacy_vision.js ; node test_pin.js ; node test_state_machine.js
 ```
 
-### Test Suite Summary
-```text
-========================================================================
- Test Suite                      Total Assertions   Passed   Status
-========================================================================
- test_smart_qr_parser.js                88            88     100% PASS
- test_speaker_verification.js          47            47     100% PASS
- test_privacy_vision.js                23            23     100% PASS
- test_pin.js                           12            12     100% PASS
- test_state_machine.js                 34            34     100% PASS
-========================================================================
- TOTAL VERIFIED ASSERTIONS             204           204     100% PASS
-========================================================================
-```
+| Test Suite | Focus Area | Assertions | Result |
+| :--- | :--- | :---: | :---: |
+| **`test_smart_qr_parser.js`** | URI parsing, parameter pollution, XSS, amount bounds | **88** | <span style="color:#22c55e;">**100% PASS**</span> |
+| **`test_speaker_verification.js`** | ECAPA-TDNN biometrics, VAD, noise SNR, retry limits | **47** | <span style="color:#22c55e;">**100% PASS**</span> |
+| **`test_privacy_vision.js`** | COCO-SSD detection, observer heuristics, frame persistence | **23** | <span style="color:#22c55e;">**100% PASS**</span> |
+| **`test_pin.js`** | Neural gesture classifier & PIN state transitions | **12** | <span style="color:#22c55e;">**100% PASS**</span> |
+| **`test_state_machine.js`** | 17-state monotonic lifecycle, undo window, tamper resistance | **34** | <span style="color:#22c55e;">**100% PASS**</span> |
+| **TOTAL** | **Full System Coverage** | **204** | <span style="color:#22c55e;">**100% PASS**</span> |
 
 ---
 
-## 🛠️ Local Development & Quick Start
+## 🚀 Quick Start & Local Setup
 
-### Prerequisites
-* Any modern web browser with Web Audio API, Web Speech API, and WebGL support (Chrome, Edge, Safari, Firefox).
-* Node.js (v16+) for running the test runner.
+Get VoxPay running on your machine in under 60 seconds:
 
-### Running Locally
 ```bash
 # 1. Clone the repository
 git clone https://github.com/mysterious03/payvo.git
 cd payvo
 
-# 2. Run test suites to verify integrity
+# 2. Run the test suite to verify everything is solid
 node test_smart_qr_parser.js
-node test_state_machine.js
 
-# 3. Launch with any static web server
+# 3. Start a local server (using Python or Node)
 npx serve .
-# Or using Python 3
-python -m http.server 8000
+# Or: python -m http.server 8000
 ```
-4. Open `http://localhost:8000` or `http://localhost:3000` in your browser.
-5. Grant camera and microphone permissions when prompted to enable voice assistant and QR scanning features.
+
+> **Note**: Open `http://localhost:8000` in Google Chrome, Edge, or Safari. When prompted, allow **Camera** and **Microphone** permissions for the AI features to activate!
 
 ---
 
-## 📁 Repository Structure
+## 📁 Project Map
 
 ```text
 payvo/
-├── index.html                   # Core semantic PWA document & HUD
-├── style.css                    # Futuristic dark aesthetic & high-contrast tokens
-├── app.js                       # Primary UI router & screen controller
-├── camera-manager.js            # Unified camera stream hardware manager
-├── privacy-vision.js            # Real-time on-device COCO-SSD privacy detector
-├── smart-qr-parser.js           # Deterministic UPI URI & QR security validator
-├── qr-scanner.js                # Optical QR scanner & barcode integration
-├── speaker-verification.js      # Client-side ECAPA-TDNN voice biometrics
-├── voice.js                     # Speech recognition & conversational TTS engine
-├── pin.js                       # Draw-to-PIN & Tap-to-PIN authentication engine
-├── payment.js                   # Payment screen lifecycle & session controller
-├── upi.js                       # Contact directory & phone/UPI ID transfer flows
-├── transactions.js              # Immutable local transaction ledger & balance store
-├── transaction-state-machine.js # Deterministic 17-state transaction safety engine
-└── test_*.js                    # Unit, regression, and security calibration suites
+│
+├── 🎨 User Interface & Styling
+│   ├── index.html                   # Semantic HTML5 single-page application & HUD
+│   ├── style.css                    # Futuristic high-contrast dark theme & animations
+│   └── app.js                       # Master UI controller and screen routing
+│
+├── 🧠 AI & Biometrics Layer
+│   ├── speaker-verification.js      # ECAPA-TDNN voice identity & VAD feature extractor
+│   ├── privacy-vision.js            # TensorFlow.js COCO-SSD shoulder-surfing detector
+│   ├── camera-manager.js            # Unified camera stream hardware manager
+│   └── pin.js                       # Draw-to-PIN neural gesture recognizer
+│
+├── 🛡️ Financial Safety & Payments
+│   ├── transaction-state-machine.js # Deterministic 17-state payment lifecycle engine
+│   ├── smart-qr-parser.js           # Deterministic UPI URI & QR security parser
+│   ├── qr-scanner.js                # Camera QR scanning & image upload decoder
+│   ├── payment.js                   # Payment screen controller & voice amount flow
+│   ├── upi.js                       # Contact carousel & phone/UPI ID transfer logic
+│   └── transactions.js              # Immutable local ledger & live balance store
+│
+└── 🧪 Automated Test Suites
+    ├── test_smart_qr_parser.js      # 88 QR security & parsing assertions
+    ├── test_speaker_verification.js  # 47 voice biometrics & SNR assertions
+    ├── test_privacy_vision.js        # 23 observer detection assertions
+    ├── test_pin.js                  # 12 gesture classifier assertions
+    └── test_state_machine.js         # 34 financial safety assertions
 ```
+
+---
+
+## 🌟 Technology Stack
+
+<p align="center">
+  <img src="https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black" />
+  <img src="https://img.shields.io/badge/TensorFlow.js-4.22.0-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white" />
+  <img src="https://img.shields.io/badge/Web_Speech_API-Voice_First-4285F4?style=for-the-badge&logo=google&logoColor=white" />
+  <img src="https://img.shields.io/badge/HTML5-Semantic-E34F26?style=for-the-badge&logo=html5&logoColor=white" />
+  <img src="https://img.shields.io/badge/CSS3-Modern_Flex/Grid-1572B6?style=for-the-badge&logo=css3&logoColor=white" />
+  <img src="https://img.shields.io/badge/Web_Audio_API-DSP_&_FFT-10B981?style=for-the-badge&logo=audio-technica&logoColor=white" />
+</p>
+
+---
+
+## 🤝 Contributing & Community
+
+We warmly welcome contributions! Whether it's adding multilingual voice prompts, optimizing neural models, or refining accessibility features:
+
+1. **Fork** the repository
+2. **Create** your feature branch (`git checkout -b feature/AmazingFeature`)
+3. **Commit** your changes (`git commit -m 'feat: Add some AmazingFeature'`)
+4. **Push** to the branch (`git push origin feature/AmazingFeature`)
+5. **Open** a Pull Request
 
 ---
 
 ## 📄 License
-This project is licensed under the [MIT License](LICENSE).
-Distributed freely to advance accessibility and privacy in digital financial infrastructure.
+
+Distributed under the **MIT License**. See `LICENSE` for more information.
+
+<div align="center">
+  <sub>Built with ❤️ for accessible, barrier-free digital financial independence.</sub>
+</div>
