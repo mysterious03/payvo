@@ -1,5 +1,5 @@
 // voice-studio.js - Professional Multi-Sample Voice Biometrics & Dataset Recording Studio for VoxPay
-// Dual Pipeline: MediaRecorder + Web Audio Analyser Visualizer with Resumed AudioContext & PCM 16kHz Decoder
+// Direct Float32 PCM Stream Capture (Zero decodeAudioData dependency) with Real-Time Waveform & 16kHz WAV Engine
 
 (function (global) {
     'use strict';
@@ -23,9 +23,10 @@
             this.isRecording = false;
             this.audioCtx = null;
             this.mediaStream = null;
-            this.mediaRecorder = null;
-            this.audioChunks = [];
+            this.source = null;
             this.analyser = null;
+            this.processor = null;
+            this.pcmBuffers = [];
             this.animationId = null;
             this.recordStartTime = 0;
             this.selectedPhraseIndex = 0;
@@ -39,10 +40,16 @@
                 const stored = localStorage.getItem(this.storageKey);
                 if (stored) {
                     const parsed = JSON.parse(stored);
-                    this.recordedSamples = parsed.map(s => ({
-                        ...s,
-                        pcmFloat32: new Float32Array(s.pcmArray)
-                    }));
+                    this.recordedSamples = parsed.map(s => {
+                        const pcm = new Float32Array(s.pcmArray);
+                        const wavBlob = this.encodeWAV(pcm, 16000);
+                        return {
+                            ...s,
+                            pcmFloat32: pcm,
+                            wavBlob: wavBlob,
+                            audioUrl: URL.createObjectURL(wavBlob)
+                        };
+                    });
                 }
             } catch (e) {
                 console.warn('[VoiceStudio] Could not load saved samples:', e);
@@ -63,7 +70,7 @@
                 }));
                 localStorage.setItem(this.storageKey, JSON.stringify(serializable));
             } catch (e) {
-                console.warn('[VoiceStudio] Storage quota reached, keeping in memory:', e);
+                console.warn('[VoiceStudio] Storage quota note, keeping in memory:', e);
             }
         }
 
@@ -72,11 +79,11 @@
         }
 
         async startRecording() {
-            if (this.isRecording) return;
-            this.audioChunks = [];
+            if (this.isRecording) return false;
+            this.pcmBuffers = [];
 
             try {
-                // 1. Request microphone access
+                // 1. Request microphone stream
                 this.mediaStream = await navigator.mediaDevices.getUserMedia({
                     audio: {
                         echoCancellation: true,
@@ -85,37 +92,31 @@
                     }
                 });
 
-                // 2. Initialize AudioContext and force resume
+                // 2. Initialize AudioContext and resume immediately
                 const AudioContextClass = window.AudioContext || window.webkitAudioContext;
                 this.audioCtx = new AudioContextClass();
                 if (this.audioCtx.state === 'suspended') {
                     await this.audioCtx.resume();
                 }
 
-                // 3. Connect Analyser for Live Oscilloscope
-                const source = this.audioCtx.createMediaStreamSource(this.mediaStream);
+                // 3. Connect nodes
+                this.source = this.audioCtx.createMediaStreamSource(this.mediaStream);
                 this.analyser = this.audioCtx.createAnalyser();
                 this.analyser.fftSize = 256;
-                source.connect(this.analyser);
 
-                // 4. Initialize MediaRecorder
-                let mimeType = 'audio/webm';
-                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
-                    mimeType = 'audio/webm;codecs=opus';
-                } else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) {
-                    mimeType = 'audio/ogg;codecs=opus';
-                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
-                    mimeType = 'audio/mp4';
-                }
-
-                this.mediaRecorder = new MediaRecorder(this.mediaStream, { mimeType });
-                this.mediaRecorder.ondataavailable = (e) => {
-                    if (e.data && e.data.size > 0) {
-                        this.audioChunks.push(e.data);
-                    }
+                // ScriptProcessor for direct raw Float32 audio collection
+                const bufferSize = 4096;
+                this.processor = this.audioCtx.createScriptProcessor(bufferSize, 1, 1);
+                this.processor.onaudioprocess = (e) => {
+                    if (!this.isRecording) return;
+                    const input = e.inputBuffer.getChannelData(0);
+                    this.pcmBuffers.push(new Float32Array(input));
                 };
 
-                this.mediaRecorder.start(100);
+                this.source.connect(this.analyser);
+                this.analyser.connect(this.processor);
+                this.processor.connect(this.audioCtx.destination);
+
                 this.isRecording = true;
                 this.recordStartTime = Date.now();
 
@@ -130,7 +131,7 @@
         }
 
         async stopRecording() {
-            if (!this.isRecording) return;
+            if (!this.isRecording) return null;
             this.isRecording = false;
 
             if (this.animationId) {
@@ -138,80 +139,74 @@
                 this.animationId = null;
             }
 
-            return new Promise((resolve) => {
-                if (!this.mediaRecorder) {
-                    this._cleanStream();
-                    resolve(null);
-                    return;
-                }
+            const currentSampleRate = this.audioCtx ? this.audioCtx.sampleRate : 48000;
 
-                this.mediaRecorder.onstop = async () => {
-                    const audioBlob = new Blob(this.audioChunks, { type: this.mediaRecorder.mimeType || 'audio/webm' });
-                    this._cleanStream();
+            // Merge collected Float32 buffers
+            const totalLength = this.pcmBuffers.reduce((acc, b) => acc + b.length, 0);
+            const rawMerged = new Float32Array(totalLength);
+            let offset = 0;
+            for (const buf of this.pcmBuffers) {
+                rawMerged.set(buf, offset);
+                offset += buf.length;
+            }
 
-                    try {
-                        // Decode audio into PCM Float32 Array
-                        const arrayBuffer = await audioBlob.arrayBuffer();
-                        const decodeCtx = new (window.AudioContext || window.webkitAudioContext)();
-                        const audioBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
+            // Cleanup stream
+            this._cleanStream();
 
-                        // Resample / extract 16kHz mono Float32
-                        const pcm = this._resampleTo16kMono(audioBuffer);
+            // Downsample / resample to 16kHz mono Float32
+            const pcm16k = this._resampleRaw(rawMerged, currentSampleRate, 16000);
 
-                        if (pcm.length < 8000) { // < 0.5s
-                            alert('Audio sample was too short. Please speak the phrase clearly for 1-2 seconds.');
-                            this._notifyUI();
-                            resolve(null);
-                            return;
-                        }
+            if (pcm16k.length < 8000) { // < 0.5s
+                alert('Audio sample was too short. Please speak the phrase clearly for 1-2 seconds.');
+                this._notifyUI();
+                return null;
+            }
 
-                        const durationSec = parseFloat((pcm.length / 16000).toFixed(2));
-                        const snrDb = this._estimateSNR(pcm);
-                        const phrase = PHRASES[this.selectedPhraseIndex] || 'Custom Sample';
-                        const sampleId = 'sample_' + Date.now();
+            const durationSec = parseFloat((pcm16k.length / 16000).toFixed(2));
+            const snrDb = this._estimateSNR(pcm16k);
+            const phrase = PHRASES[this.selectedPhraseIndex] || 'Custom Sample';
+            const sampleId = 'sample_' + Date.now();
 
-                        // Create WAV Blob for instant clean playback
-                        const wavBlob = this.encodeWAV(pcm, 16000);
-                        const audioUrl = URL.createObjectURL(wavBlob);
+            // Create genuine standard 16kHz WAV Blob
+            const wavBlob = this.encodeWAV(pcm16k, 16000);
+            const audioUrl = URL.createObjectURL(wavBlob);
 
-                        const sample = {
-                            id: sampleId,
-                            name: `Sample #${this.recordedSamples.length + 1}`,
-                            phrase: phrase,
-                            pcmFloat32: pcm,
-                            sampleRate: 16000,
-                            durationSec: durationSec,
-                            snrDb: snrDb,
-                            timestamp: new Date().toLocaleTimeString(),
-                            audioUrl: audioUrl,
-                            wavBlob: wavBlob
-                        };
+            const sample = {
+                id: sampleId,
+                name: `Sample #${this.recordedSamples.length + 1}`,
+                phrase: phrase,
+                pcmFloat32: pcm16k,
+                sampleRate: 16000,
+                durationSec: durationSec,
+                snrDb: snrDb,
+                timestamp: new Date().toLocaleTimeString(),
+                audioUrl: audioUrl,
+                wavBlob: wavBlob
+            };
 
-                        this.recordedSamples.push(sample);
-                        this._saveStoredSamples();
+            this.recordedSamples.push(sample);
+            this._saveStoredSamples();
 
-                        // Rotate to next prompt phrase
-                        this.selectedPhraseIndex = (this.selectedPhraseIndex + 1) % PHRASES.length;
+            // Rotate prompt phrase
+            this.selectedPhraseIndex = (this.selectedPhraseIndex + 1) % PHRASES.length;
 
-                        this._notifyUI();
+            this._notifyUI();
 
-                        if (window.speak) {
-                            window.speak(`Sample recorded. Total samples: ${this.recordedSamples.length}.`);
-                        }
-                        resolve(sample);
-                    } catch (decodeErr) {
-                        console.error('[VoiceStudio] Decode error:', decodeErr);
-                        alert('Could not decode audio: ' + decodeErr.message);
-                        this._notifyUI();
-                        resolve(null);
-                    }
-                };
-
-                this.mediaRecorder.stop();
-            });
+            if (window.speak) {
+                window.speak(`Sample recorded. Total samples: ${this.recordedSamples.length}.`);
+            }
+            return sample;
         }
 
         _cleanStream() {
+            if (this.processor) {
+                try { this.processor.disconnect(); } catch (e) {}
+                this.processor = null;
+            }
+            if (this.source) {
+                try { this.source.disconnect(); } catch (e) {}
+                this.source = null;
+            }
             if (this.mediaStream) {
                 this.mediaStream.getTracks().forEach(t => t.stop());
                 this.mediaStream = null;
@@ -222,22 +217,18 @@
             }
         }
 
-        _resampleTo16kMono(audioBuffer) {
-            const raw = audioBuffer.getChannelData(0);
-            const srcRate = audioBuffer.sampleRate;
-            const targetRate = 16000;
-
-            if (srcRate === targetRate) {
-                return raw;
+        _resampleRaw(rawArray, srcRate, targetRate = 16000) {
+            if (srcRate === targetRate || !rawArray.length) {
+                return rawArray;
             }
 
             const ratio = srcRate / targetRate;
-            const newLength = Math.round(raw.length / ratio);
+            const newLength = Math.round(rawArray.length / ratio);
             const result = new Float32Array(newLength);
 
             for (let i = 0; i < newLength; i++) {
-                const srcIdx = Math.min(raw.length - 1, Math.round(i * ratio));
-                result[i] = raw[srcIdx];
+                const srcIdx = Math.min(rawArray.length - 1, Math.round(i * ratio));
+                result[i] = rawArray[srcIdx];
             }
             return result;
         }
