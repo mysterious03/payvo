@@ -472,6 +472,8 @@
             this.listeners.forEach(fn => {
                 try { fn(status); } catch (e) {}
             });
+        }
+
         async start(options = {}) {
             if (this.isRunning) return;
 
@@ -539,12 +541,6 @@
                 try {
                     videoEl.srcObject.getTracks().forEach(t => t.stop());
                 } catch (e) {}
-                videoEl.srcObject = null;
-            }
-        } }
-            const videoEl = document.getElementById('privacy-front-video');
-            if (videoEl && videoEl.srcObject) {
-                videoEl.srcObject.getTracks().forEach(t => t.stop());
                 videoEl.srcObject = null;
             }
         }
