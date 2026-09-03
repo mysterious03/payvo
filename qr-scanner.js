@@ -9,18 +9,37 @@ window.startScanner = function () {
 
     if (!video || !canvas) return;
 
+    video.muted = true;
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('autoplay', 'true');
+
+    if (statusEl) {
+        statusEl.textContent = '🔍 Looking for QR code...';
+        statusEl.style.color = '#b4f056';
+    }
+
     // Voice prompt
-    if (window.speak) window.speak("Scanner opened. Say 'scan QR' or 'scan it' to detect merchant.");
+    if (window.speak) window.speak("Scanner opened. Align QR code inside the frame.");
 
     const onStreamReady = (stream) => {
         isScanning = true;
+        video.srcObject = stream;
+        video.play().catch(e => console.warn('Video play catch:', e));
+
+        let attempts = 0;
         const checkReady = () => {
             if (video.videoWidth > 0 && video.videoHeight > 0) {
                 canvas.width = video.videoWidth;
                 canvas.height = video.videoHeight;
                 startScanLoop(video, canvas, statusEl);
+            } else if (attempts < 20) {
+                attempts++;
+                setTimeout(checkReady, 100);
             } else {
-                setTimeout(checkReady, 50);
+                // Fallback dimensions if metadata delayed
+                canvas.width = 640;
+                canvas.height = 480;
+                startScanLoop(video, canvas, statusEl);
             }
         };
         video.onloadedmetadata = checkReady;
@@ -36,19 +55,25 @@ window.startScanner = function () {
         .then(onStreamReady)
         .catch(err => {
             console.error("Camera error:", err);
-            if (statusEl) statusEl.textContent = '❌ Camera blocked. Use Upload below.';
+            if (statusEl) {
+                statusEl.textContent = '📷 Tap sample QR below or Upload image';
+                statusEl.style.color = '#b4f056';
+            }
+            // Auto display FreshMart test QR for quick testing
+            if (typeof window.displayTestQR === 'function') {
+                window.displayTestQR('upi://pay?pa=freshmart@icici&pn=FreshMart%20Store&am=499.00&cu=INR&tn=Groceries', 'FreshMart ₹499');
+            }
         });
     } else {
         // Direct fallback
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-            .then(stream => {
-                video.srcObject = stream;
-                video.play();
-                onStreamReady(stream);
-            })
+        navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+            .then(onStreamReady)
             .catch(err => {
-                console.error("Camera error:", err);
-                if (statusEl) statusEl.textContent = '❌ Camera blocked. Use Upload below.';
+                console.error("Camera fallback error:", err);
+                if (statusEl) {
+                    statusEl.textContent = '📷 Tap sample QR below or Upload image';
+                    statusEl.style.color = '#b4f056';
+                }
             });
     }
 };
@@ -271,21 +296,35 @@ window.displayTestQR = function (upiUri, title) {
     holder.innerHTML = '';
 
     if (titleEl) {
-        titleEl.textContent = `Point camera here or tap QR to pay ${title}`;
+        titleEl.textContent = `Point camera or tap QR to scan & pay ${title}`;
     }
 
-    if (typeof QRCode !== 'undefined') {
-        new QRCode(holder, {
-            text: upiUri,
-            width: 158,
-            height: 158,
-            colorDark: '#000000',
-            colorLight: '#ffffff',
-            correctLevel: QRCode.CorrectLevel.H
-        });
+    if (typeof myQREngine !== 'undefined' && myQREngine.generateMatrix) {
+        const matrix = myQREngine.generateMatrix(upiUri);
+        const canvas = document.createElement('canvas');
+        canvas.width = 158;
+        canvas.height = 158;
+        const ctx = canvas.getContext('2d');
+        const size = matrix.length;
+        const cell = 158 / size;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, 158, 158);
+        ctx.fillStyle = '#000000';
+
+        for (let r = 0; r < size; r++) {
+            for (let c = 0; c < size; c++) {
+                if (matrix[r][c]) {
+                    ctx.fillRect(c * cell, r * cell, Math.ceil(cell), Math.ceil(cell));
+                }
+            }
+        }
+        canvas.style.borderRadius = '8px';
+        canvas.style.cursor = 'pointer';
+        holder.appendChild(canvas);
     }
 
-    // Clicking the QR also simulates scanning it directly
+    // Clicking the QR simulates scanning it directly
     holder.onclick = () => {
         if (typeof window.stopScanner === 'function') window.stopScanner();
         const statusEl = document.getElementById('scan-status');
