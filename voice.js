@@ -550,47 +550,176 @@ window.initVoiceAssistant = function () {
 window.handleVoiceCommand = async function (command) {
     if (!command) return;
     const cmd = command.toLowerCase().trim();
-    console.log('[voice.js] Processing voice command:', cmd);
+    console.log('[voice.js] User Spoke:', cmd);
 
-    // Current active screen ID gives us context
-    const activeScreen = document.querySelector('.screen.active')?.id;
-    const sv = window.speakerVerification;
+    const activeScreen = document.querySelector('.screen.active')?.id || 'home-screen';
+    if (typeof window.updateVoiceHUD === 'function') {
+        window.updateVoiceHUD('heard', command);
+    }
 
-    // On Payment Screen: Allow immediate voice confirmation
-    if (activeScreen === 'payment-screen' && /(confirm|pay|proceed|yes|send|approve|do it|okay)/i.test(cmd)) {
-        const confirmBtn = document.getElementById('btn-pay-confirm');
-        if (confirmBtn && !confirmBtn.disabled) {
-            confirmBtn.click();
+    // 1. Pass User's Spoken Speech + Live App Context directly to Groq AI Brain
+    let decision = null;
+    if (typeof groqService !== 'undefined' && groqService.parseVoiceIntent) {
+        try {
+            decision = await groqService.parseVoiceIntent(command, {
+                activeScreen: activeScreen,
+                paymentSession: window.paymentSession,
+                balance: window.getBalance ? window.getBalance() : 1550
+            });
+        } catch (e) {
+            console.warn('[voice.js] Groq LLM parsing error:', e);
+        }
+    }
+
+    const action = decision ? decision.action : null;
+    console.log('[voice.js] Groq AI Decided Action:', action);
+
+    // --- CASE 1: CONFIRM / PROCEED PAYMENT ---
+    if (action === 'CONFIRM_PAYMENT' || (activeScreen === 'payment-screen' && /(confirm|pay|proceed|continue|yes|ok|okay|send|approve|do it|next|yep|sure)/i.test(cmd))) {
+        if (activeScreen === 'payment-screen') {
+            const confirmBtn = document.getElementById('btn-pay-confirm');
+            if (confirmBtn && !confirmBtn.disabled) {
+                const spoken = decision?.spokenResponse || "Proceeding with payment.";
+                if (window.speak) {
+                    window.speak(spoken, () => {
+                        confirmBtn.click();
+                    });
+                } else {
+                    confirmBtn.click();
+                }
+                return;
+            }
+        }
+    }
+
+    // --- CASE 2: CHANGE / ENTER AMOUNT ---
+    if (action === 'CHANGE_AMOUNT' || (decision && decision.amount)) {
+        const amt = decision.amount || parseNumber(cmd);
+        if (activeScreen === 'payment-screen' && amt) {
+            const input = document.getElementById('pay-amount');
+            if (input) {
+                input.value = amt;
+                input.dispatchEvent(new Event('input'));
+            }
+            if (window.speak) {
+                window.speak(decision.spokenResponse || `Updated amount to ${amt} rupees.`, () => {
+                    const confirmBtn = document.getElementById('btn-pay-confirm');
+                    if (confirmBtn && !confirmBtn.disabled) confirmBtn.click();
+                });
+            }
             return;
         }
     }
 
-    // 1. Check Command Sensitivity
-    const isSensitive = sv ? sv.isCommandSensitive(cmd) : false;
-
-    if (isSensitive && sv) {
-        console.log('[voice.js] Sensitive command detected. Invoking Speaker Verification...');
-        const profileState = sv.getProfileState();
-
-        if (profileState === 'NO_PROFILE') {
-            // Auto-fallback: If on payment screen or initiating transfer, proceed to screen confirmation
-            executeNonSensitiveCommand(cmd, activeScreen);
+    // --- CASE 3: CANCEL PAYMENT ---
+    if (action === 'CANCEL_PAYMENT' || /(cancel|stop|abort|nevermind|back)/i.test(cmd)) {
+        if (activeScreen === 'payment-screen') {
+            const cancelBtn = document.getElementById('btn-pay-back') || document.getElementById('btn-undo-cancel');
+            if (cancelBtn) cancelBtn.click();
+            if (window.speak) window.speak(decision?.spokenResponse || "Payment cancelled.");
             return;
         }
+    }
 
-        // Voice checking announcement
+    // --- CASE 4: CHECK BALANCE ---
+    if (action === 'CHECK_BALANCE' || /(balance|how much|funds|money|account)/i.test(cmd)) {
+        const bal = typeof window.getBalance === 'function' ? window.getBalance() : 1550.00;
+        const msg = decision?.spokenResponse || `Your available SwiftPass balance is ${bal.toLocaleString('en-IN')} rupees.`;
+        if (typeof showScreen === 'function') showScreen('home-screen');
+        if (window.speak) window.speak(msg);
+        return;
+    }
+
+    // --- CASE 5: RECENT ACTIVITY / TRANSACTIONS ---
+    if (action === 'TRANSACTION_HISTORY' || /(activity|recent|transaction|history|statement|spent)/i.test(cmd)) {
+        if (typeof showScreen === 'function') {
+            showScreen('home-screen');
+            setTimeout(() => {
+                const list = document.getElementById('transactions-list');
+                if (list) list.scrollIntoView({ behavior: 'smooth' });
+            }, 300);
+        }
+        let msg = decision?.spokenResponse || "Here is your recent activity.";
+        if (typeof window.getTransactions === 'function') {
+            const txs = window.getTransactions();
+            if (txs && txs.length > 0 && !decision?.spokenResponse) {
+                const last = txs[0];
+                msg = `Your last transaction was ${last.type === 'credit' ? 'a credit' : 'a payment'} of ${last.amount} rupees ${last.type === 'credit' ? 'from' : 'to'} ${last.title}.`;
+            }
+        }
+        if (window.speak) window.speak(msg);
+        return;
+    }
+
+    // --- CASE 6: GENERATE QR / RECEIVE MONEY ---
+    if (action === 'GENERATE_QR' || /(generate qr|my qr|receive|show qr|create qr)/i.test(cmd)) {
+        const amt = decision?.amount || parseNumber(cmd);
+        if (typeof showScreen === 'function') showScreen('receive-screen');
+        if (typeof myQREngine !== 'undefined' && myQREngine.renderQR) {
+            myQREngine.renderQR(amt);
+        }
+        const msg = decision?.spokenResponse || (amt ? `Displaying your UPI QR code requesting ${amt} rupees.` : "Displaying your personal UPI QR code.");
+        if (window.speak) window.speak(msg);
+        return;
+    }
+
+    // --- CASE 7: SCAN QR ---
+    if (action === 'SCAN_QR' || /(scan|open scanner|camera)/i.test(cmd)) {
+        if (typeof showScreen === 'function') {
+            showScreen('scan-screen');
+            if (window.startScanner) window.startScanner();
+        }
+        if (window.speak) window.speak(decision?.spokenResponse || "Opening QR code scanner.");
+        return;
+    }
+
+    // --- CASE 8: LOAD MONEY ---
+    if (action === 'LOAD_MONEY' || /(add money|load money|add funds)/i.test(cmd)) {
+        if (typeof showScreen === 'function') showScreen('load-screen');
+        const amt = decision?.amount || parseNumber(cmd);
+        if (amt) {
+            const input = document.getElementById('load-amount');
+            if (input) input.value = amt;
+        }
+        if (window.speak) window.speak(decision?.spokenResponse || "Opening Add Funds screen.");
+        return;
+    }
+
+    // --- CASE 9: DIRECT TRANSFERS / PAY PERSON ---
+    if (decision && decision.recipient && decision.amount) {
+        const destName = decision.recipient;
+        const destUpi = decision.recipient.includes('@') ? decision.recipient : `${decision.recipient.toLowerCase()}@upi`;
+        const num = decision.amount;
         if (window.speak) {
-            window.speak("Checking your voice.", async () => {
-                await executeSensitiveCommandWithVerification(cmd, activeScreen);
+            window.speak(decision.spokenResponse || `Setting up payment of ${num} rupees to ${destName}.`, () => {
+                routeToPayment(destName, destUpi, num, 'VOICE');
             });
         } else {
-            await executeSensitiveCommandWithVerification(cmd, activeScreen);
+            routeToPayment(destName, destUpi, num, 'VOICE');
         }
         return;
     }
 
-    // 2. Non-Sensitive Voice Commands (Execute Immediately)
-    executeNonSensitiveCommand(cmd, activeScreen);
+    // --- CASE 10: SCREEN NAVIGATION ---
+    if (action === 'NAVIGATE' || decision?.targetScreen) {
+        const target = decision.targetScreen;
+        if (target && typeof showScreen === 'function') {
+            showScreen(target);
+            if (window.speak) window.speak(decision.spokenResponse || `Opening screen.`);
+            return;
+        }
+    }
+
+    // --- CASE 11: GENERAL QUERY / CONVERSATIONAL ANSWER ---
+    if (decision && decision.spokenResponse) {
+        if (window.speak) window.speak(decision.spokenResponse);
+        return;
+    }
+
+    // Fallback if offline
+    if (window.speak) {
+        window.speak(`I heard "${command}". You can ask to pay, check balance, view transactions, or generate a QR code.`);
+    }
 };
 
 /**
