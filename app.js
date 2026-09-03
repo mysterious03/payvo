@@ -425,100 +425,55 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Voice Biometrics Enrollment Controller
-    const enrollPhrases = [
-        "Pay five hundred rupees with VoxPay",
-        "Check my available SwiftPass balance",
-        "Authorize secure voice payment transaction"
-    ];
-    let enrollStep = 0;
-    const enrollSamples = [];
-
+    // Voice Biometrics Studio Controller
     document.getElementById('btn-enroll-voice')?.addEventListener('click', () => {
-        enrollStep = 0;
-        enrollSamples.length = 0;
         const modal = document.getElementById('voice-enroll-modal');
-        const progressEl = document.getElementById('enroll-progress-text');
-        const phraseEl = document.getElementById('enroll-prompt-phrase');
-        if (modal) modal.style.display = 'flex';
-        if (progressEl) progressEl.textContent = 'Sample 1 of 3: Speak the phrase below';
-        if (phraseEl) phraseEl.textContent = `"${enrollPhrases[0]}"`;
+        if (modal) {
+            modal.style.display = 'flex';
+            if (window.voiceStudio) window.voiceStudio._notifyUI();
+        }
     });
 
-    document.getElementById('btn-start-enroll-sample')?.addEventListener('click', async () => {
-        const btn = document.getElementById('btn-start-enroll-sample');
-        const progressEl = document.getElementById('enroll-progress-text');
-        const phraseEl = document.getElementById('enroll-prompt-phrase');
-        if (btn) {
-            btn.textContent = '🎙️ Listening... Speak now!';
-            btn.style.background = '#ef4444';
-            btn.style.color = '#fff';
-        }
+    const recordBtn = document.getElementById('btn-studio-record');
+    let recordTimer = null;
 
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-            const source = audioCtx.createMediaStreamSource(stream);
-            const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+    if (recordBtn) {
+        const start = async () => {
+            if (!window.voiceStudio || window.voiceStudio.isRecording) return;
+            await window.voiceStudio.startRecording();
+            recordBtn.textContent = '⏹️ Recording (Speak now... Tap to finish)';
+            recordBtn.style.background = '#ef4444';
+            recordBtn.style.color = '#fff';
 
-            const pcmData = [];
-            processor.onaudioprocess = (e) => {
-                const input = e.inputBuffer.getChannelData(0);
-                pcmData.push(...input);
-            };
+            // Auto-stop after 3.2 seconds if user doesn't tap stop
+            if (recordTimer) clearTimeout(recordTimer);
+            recordTimer = setTimeout(() => {
+                stop();
+            }, 3200);
+        };
 
-            source.connect(processor);
-            processor.connect(audioCtx.destination);
-
-            // Record 2.2 seconds of speech
-            setTimeout(async () => {
-                processor.disconnect();
-                source.disconnect();
-                stream.getTracks().forEach(t => t.stop());
-
-                const float32Array = new Float32Array(pcmData);
-                enrollSamples.push(float32Array);
-                enrollStep++;
-
-                if (enrollStep < 3) {
-                    if (progressEl) progressEl.textContent = `✓ Sample ${enrollStep} Saved! Now Sample ${enrollStep + 1} of 3:`;
-                    if (phraseEl) phraseEl.textContent = `"${enrollPhrases[enrollStep]}"`;
-                    if (btn) {
-                        btn.textContent = '🔴 Record Next Sample';
-                        btn.style.background = '#b4f056';
-                        btn.style.color = '#000';
-                    }
-                    if (window.speak) window.speak(`Sample ${enrollStep} recorded. Please speak the next phrase.`);
-                } else {
-                    // Finalize Enrollment with SpeakerVerification
-                    if (typeof speakerVerification !== 'undefined' && speakerVerification.enrollSpeaker) {
-                        await speakerVerification.enrollSpeaker('user_primary', enrollSamples);
-                    }
-                    if (progressEl) progressEl.textContent = '🎉 Voice Profile Enrolled & Locked!';
-                    if (phraseEl) phraseEl.textContent = 'VoxPay Voice Brain is now exclusively locked to YOUR voice!';
-                    if (btn) {
-                        btn.textContent = '✓ Voice Enrollment Complete';
-                        btn.style.background = '#10b981';
-                        btn.style.color = '#fff';
-                    }
-                    if (window.speak) window.speak("Voice enrollment successful. VoxPay is now locked to your voice.");
-                    setTimeout(() => {
-                        const modal = document.getElementById('voice-enroll-modal');
-                        if (modal) modal.style.display = 'none';
-                    }, 2500);
-                }
-            }, 2200);
-
-        } catch (err) {
-            console.error('Enrollment error:', err);
-            if (btn) {
-                btn.textContent = '🔴 Record My Voice Sample';
-                btn.style.background = '#b4f056';
-                btn.style.color = '#000';
+        const stop = () => {
+            if (recordTimer) {
+                clearTimeout(recordTimer);
+                recordTimer = null;
             }
-            alert('Could not access microphone for enrollment: ' + err.message);
-        }
-    });
+            if (window.voiceStudio && window.voiceStudio.isRecording) {
+                window.voiceStudio.stopRecording();
+            }
+            recordBtn.textContent = '🔴 Record Sample (Hold / Click)';
+            recordBtn.style.background = '#b4f056';
+            recordBtn.style.color = '#000';
+        };
+
+        recordBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.voiceStudio && window.voiceStudio.isRecording) {
+                stop();
+            } else {
+                start();
+            }
+        });
+    }
 
     // Auto-start Privacy Vision Live COCO-SSD Edge Model on launch
     setTimeout(() => {

@@ -744,28 +744,74 @@
         </div>
     </div>
 
-    <!-- Voice Enrollment Modal -->
-    <div id="voice-enroll-modal" style="position: fixed; inset: 0; z-index: 999999; background: rgba(0,0,0,0.85); backdrop-filter: blur(20px); display: none; align-items: center; justify-content: center; padding: 20px;">
-        <div style="background: #0f172a; border: 1px solid #b4f056; border-radius: 24px; padding: 24px; width: 100%; max-width: 360px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8);">
-            <div style="width: 60px; height: 60px; border-radius: 50%; background: rgba(180,240,86,0.15); border: 2px solid #b4f056; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 16px;">
-                🎤
+    <!-- Voice Biometrics Studio Modal (Unlimited Sample Recorder) -->
+    <div id="voice-enroll-modal" style="position: fixed; inset: 0; z-index: 999999; background: rgba(0,0,0,0.88); backdrop-filter: blur(24px); display: none; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: #0f172a; border: 1px solid #b4f056; border-radius: 24px; padding: 20px; width: 100%; max-width: 420px; text-align: center; box-shadow: 0 25px 60px rgba(0,0,0,0.9); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden;">
+            
+            <!-- Header -->
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 10px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="font-size: 20px;">🎤</span>
+                    <span style="font-weight: 800; color: #fff; font-size: 15px;">Voice Biometrics Studio</span>
+                </div>
+                <span id="studio-accuracy-badge" style="font-size: 10px; font-weight: 800; font-family: monospace; background: rgba(180,240,86,0.1); border: 1px solid #b4f056; padding: 3px 8px; border-radius: 20px; color: #b4f056;">
+                    0 Samples
+                </span>
             </div>
-            <h3 style="color: #fff; font-size: 1.2rem; font-weight: 800; margin-bottom: 6px;">Voice Biometrics Enrollment</h3>
-            <p style="color: #94a3b8; font-size: 12px; line-height: 1.5; margin-bottom: 20px;">
-                Enroll your voice so VoxPay responds <b>only to your voice</b> and blocks unauthorized speakers.
-            </p>
-            <div id="enroll-progress-text" style="color: #b4f056; font-size: 14px; font-weight: 700; margin-bottom: 16px;">
-                Ready to Record Sample 1 of 3
+
+            <!-- Waveform Visualizer -->
+            <div style="position: relative; width: 100%; height: 75px; background: #060a12; border-radius: 14px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 12px;">
+                <canvas id="voice-studio-wave" width="380" height="75" style="width: 100%; height: 100%; display: block;"></canvas>
             </div>
-            <p id="enroll-prompt-phrase" style="color: #ffffff; font-size: 15px; font-style: italic; background: rgba(255,255,255,0.06); padding: 12px; border-radius: 12px; margin-bottom: 20px;">
-                "Pay five hundred rupees with VoxPay"
-            </p>
-            <button id="btn-start-enroll-sample" style="background: #b4f056; color: #000; border: none; font-weight: 800; padding: 14px 28px; border-radius: 50px; width: 100%; font-size: 15px; cursor: pointer; margin-bottom: 10px;">
-                🔴 Record My Voice Sample
-            </button>
-            <button onclick="document.getElementById('voice-enroll-modal').style.display='none'" style="background: transparent; color: #94a3b8; border: none; font-size: 12px; cursor: pointer; padding: 8px;">
-                Cancel
-            </button>
+
+            <!-- Prompt Phrase -->
+            <div style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; padding: 10px 14px; margin-bottom: 12px; text-align: left;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-size: 10px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">Prompt Phrase</span>
+                    <button onclick="window.voiceStudio && (window.voiceStudio.selectedPhraseIndex = (window.voiceStudio.selectedPhraseIndex + 1) % window.voiceStudio.getPhrases().length, window.voiceStudio._notifyUI())" style="background: transparent; border: none; color: #b4f056; font-size: 11px; cursor: pointer; font-weight: bold;">
+                        Next Phrase ↻
+                    </button>
+                </div>
+                <p id="studio-prompt-phrase" style="color: #fff; font-size: 13px; font-weight: 700; margin: 0; font-style: italic;">
+                    "Pay five hundred rupees to FreshMart"
+                </p>
+            </div>
+
+            <!-- Primary Record Controls -->
+            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                <button id="btn-studio-record" style="flex: 2; background: #b4f056; color: #000; border: none; font-weight: 900; padding: 13px 18px; border-radius: 50px; font-size: 14px; cursor: pointer; transition: all 0.2s;">
+                    🔴 Record Sample (Hold / Click)
+                </button>
+                <button onclick="window.voiceStudio && window.voiceStudio.trainAndLockModel()" style="flex: 1.2; background: rgba(16,185,129,0.15); border: 1px solid #10b981; color: #10b981; font-weight: 800; padding: 13px 12px; border-radius: 50px; font-size: 12px; cursor: pointer;">
+                    🔒 Train & Lock
+                </button>
+            </div>
+
+            <!-- Recorded Samples List -->
+            <div style="flex: 1; overflow-y: auto; text-align: left; max-height: 180px; padding-right: 4px; margin-bottom: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <span id="studio-sample-count" style="font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase;">Recorded Samples (0)</span>
+                    <button onclick="window.voiceStudio && window.voiceStudio.clearAllSamples()" style="background: transparent; border: none; color: #ef4444; font-size: 11px; cursor: pointer;">
+                        Clear All
+                    </button>
+                </div>
+                <div id="studio-samples-list"></div>
+            </div>
+
+            <!-- Export & Dismiss Footer -->
+            <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px;">
+                <div style="display: flex; gap: 6px;">
+                    <button onclick="window.voiceStudio && window.voiceStudio.exportDatasetJSON()" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: #fff; font-size: 10px; padding: 6px 10px; border-radius: 8px; cursor: pointer;">
+                        💾 Export JSON
+                    </button>
+                    <button onclick="window.voiceStudio && window.voiceStudio.exportAllWAVs()" style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: #fff; font-size: 10px; padding: 6px 10px; border-radius: 8px; cursor: pointer;">
+                        ⬇️ Export WAVs
+                    </button>
+                </div>
+                <button onclick="document.getElementById('voice-enroll-modal').style.display='none'" style="background: transparent; color: #94a3b8; border: none; font-size: 12px; cursor: pointer; padding: 6px 12px; font-weight: bold;">
+                    Close Studio ✕
+                </button>
+            </div>
         </div>
     </div>
 
@@ -776,6 +822,7 @@
     <script src="transaction-state-machine.js"></script>
     <script src="smart-qr-parser.js"></script>
     <script src="transactions.js"></script>
+    <script src="voice-studio.js"></script>
     <script src="qr-scanner.js"></script>
     <script src="payment.js"></script>
     <script src="pin.js"></script>
