@@ -681,7 +681,10 @@ async function executeNonSensitiveCommand(command, activeScreen) {
     const intent = parsed ? parsed.intent : null;
 
     // --- CASE A: BALANCE INQUIRY ---
-    if (intent === 'CHECK_BALANCE' || cmd.includes('balance') || cmd.includes('how much') || cmd.includes('funds') || cmd.includes('money do i have')) {
+    const isBalance = intent === 'CHECK_BALANCE' || 
+        /(balance|how much|funds|money|account|paisa|amount left|wallet)/i.test(cmd);
+
+    if (isBalance) {
         const bal = typeof window.getBalance === 'function' ? window.getBalance() : 1550.00;
         const msg = `Your available SwiftPass balance is ${bal.toLocaleString('en-IN')} rupees.`;
         if (typeof showScreen === 'function') showScreen('home-screen');
@@ -690,7 +693,10 @@ async function executeNonSensitiveCommand(command, activeScreen) {
     }
 
     // --- CASE B: TRANSACTION HISTORY / RECENT ACTIVITY ---
-    if (intent === 'TRANSACTION_HISTORY' || cmd.includes('transaction') || cmd.includes('history') || cmd.includes('recent') || cmd.includes('statement') || cmd.includes('past payment') || cmd.includes('who did i pay') || cmd.includes('last payment')) {
+    const isActivity = intent === 'TRANSACTION_HISTORY' || 
+        /(activity|recent|transaction|history|statement|past|spent|who did|last payment|passbook|khata|details)/i.test(cmd);
+
+    if (isActivity) {
         if (typeof showScreen === 'function') {
             showScreen('home-screen');
             setTimeout(() => {
@@ -712,7 +718,10 @@ async function executeNonSensitiveCommand(command, activeScreen) {
     }
 
     // --- CASE C: GENERATE QR CODE / RECEIVE MONEY ---
-    if (intent === 'GENERATE_QR' || cmd.includes('generate qr') || cmd.includes('my qr') || cmd.includes('receive') || cmd.includes('show qr') || cmd.includes('create qr') || cmd.includes('request money')) {
+    const isReceiveQR = intent === 'GENERATE_QR' || 
+        /(generate qr|my qr|receive|show qr|create qr|request money|get qr|barcode|code to pay)/i.test(cmd);
+
+    if (isReceiveQR) {
         const amount = (parsed && parsed.amount) ? parsed.amount : parseNumber(cmd);
         if (typeof showScreen === 'function') showScreen('receive-screen');
         if (typeof myQREngine !== 'undefined' && myQREngine.renderQR) {
@@ -724,7 +733,10 @@ async function executeNonSensitiveCommand(command, activeScreen) {
     }
 
     // --- CASE D: SCANNER ---
-    if (intent === 'SCAN_QR' || cmd.includes('open scanner') || cmd.includes('scan') || cmd.includes('camera')) {
+    const isScanner = intent === 'SCAN_QR' || 
+        /(scan|open scanner|camera|reader|pay qr|scan it)/i.test(cmd);
+
+    if (isScanner) {
         if (activeScreen === 'scan-screen') {
             document.getElementById('btn-simulate-scan')?.click();
         } else {

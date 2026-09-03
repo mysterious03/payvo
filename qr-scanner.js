@@ -72,19 +72,19 @@ function startScanLoop(video, canvas, statusEl) {
 
         try {
             if (useBarcodeDetector && detector) {
-                // Fastest path: native browser ML
+                // Fastest path: native hardware browser ML
                 const barcodes = await detector.detect(canvas);
-                if (barcodes.length > 0) {
+                if (barcodes.length > 0 && barcodes[0].rawValue) {
                     onScanSuccess(barcodes[0].rawValue, statusEl);
                     return;
                 }
             }
 
-            // Fallback: jsQR (pure JS decoder, works everywhere)
+            // High Precision Fallback: jsQR with full contrast & inversion attempts
             if (typeof jsQR !== 'undefined') {
                 const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 const code = jsQR(imgData.data, imgData.width, imgData.height, {
-                    inversionAttempts: 'dontInvert'
+                    inversionAttempts: 'attemptBoth'
                 });
                 if (code && code.data) {
                     onScanSuccess(code.data, statusEl);
@@ -93,7 +93,7 @@ function startScanLoop(video, canvas, statusEl) {
         } catch (e) {
             // Silently ignore per-frame errors
         }
-    }, 150); // Scan ~6.7 frames per second
+    }, 90); // Scan ~11 frames per second for instant detection
 }
 
 window.stopScanner = function () {
