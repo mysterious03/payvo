@@ -116,6 +116,15 @@
                             </svg></div>
                         <span>Pay UPI ID</span>
                     </button>
+                    <button class="service-btn" id="btn-service-myqr">
+                        <div class="service-icon" style="color: var(--accent-lime); background: rgba(180,240,86,0.12);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="3" width="7" height="7"></rect>
+                            <rect x="14" y="14" width="7" height="7"></rect>
+                            <rect x="3" y="14" width="7" height="7"></rect>
+                        </svg></div>
+                        <span>My QR Code</span>
+                    </button>
                     <button class="service-btn" id="btn-invite">
                         <div class="service-icon bg-blue-100"><span style="font-size: 20px;">🎁</span></div>
                         <span>Invite & Earn</span>
@@ -499,6 +508,45 @@
 
                 <button class="btn-black full-width mt-auto" style="margin-top:40px;">Share Link</button>
             </div>
+        <!-- Receive Money / My QR Screen -->
+        <section id="receive-screen" class="screen bg-slate">
+            <header class="top-bar">
+                <button class="back-btn back-to-home">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="19" y1="12" x2="5" y2="12" />
+                        <polyline points="12 19 5 12 12 5" />
+                    </svg>
+                </button>
+                <h1>Receive via UPI</h1>
+                <div style="width:40px;"></div>
+            </header>
+            <div class="flex-center-content" style="padding-top: 10px;">
+                <div class="user-avatar" style="width: 60px; height: 60px; font-size: 1.4rem; margin-bottom: 8px;">SP</div>
+                <h2 style="font-size: 1.3rem; margin-bottom: 2px;">Suriya Prakash</h2>
+                <p style="color: var(--accent-lime); font-size: 0.9rem; font-family: monospace; font-weight: 700; margin-bottom: 20px;">suriya@swiftpass</p>
+
+                <!-- Visual QR Code Container -->
+                <div style="background: #ffffff; padding: 20px; border-radius: 24px; box-shadow: 0 16px 40px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; min-width: 260px; min-height: 260px;">
+                    <div id="user-qr-display" style="display: flex; align-items: center; justify-content: center;"></div>
+                </div>
+
+                <p id="qr-amount-label" style="font-size: 0.9rem; color: var(--text-muted); font-weight: 700; margin-top: 16px;">
+                    Scan to pay any amount
+                </p>
+
+                <!-- Set Specific Amount for QR -->
+                <div style="width: 100%; margin-top: 20px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 18px; padding: 16px;">
+                    <p style="font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px;">Request Specific Amount (Optional)</p>
+                    <div style="display: flex; gap: 10px;">
+                        <input id="qr-custom-amount" type="number" placeholder="Amount (₹)" style="flex: 1; background: transparent; border: none; border-bottom: 1px solid rgba(255,255,255,0.2); padding: 8px 4px; font-size: 1.2rem; font-family: inherit; font-weight: 800; color: #b4f056; outline: none;" />
+                        <button id="btn-set-qr-amount" style="background: rgba(180,240,86,0.15); border: 1px solid #b4f056; color: #b4f056; font-family: inherit; font-weight: 700; font-size: 0.85rem; padding: 8px 18px; border-radius: 50px; cursor: pointer;">
+                            Update QR
+                        </button>
+                    </div>
+                </div>
+
+                <div id="qr-raw-uri" style="font-size: 10px; color: rgba(255,255,255,0.3); font-family: monospace; word-break: break-all; margin-top: 16px; padding: 0 10px;"></div>
+            </div>
         </section>
 
         <!-- Dynamic Bottom Navigation -->
@@ -627,6 +675,7 @@
     <script src="camera-manager.js"></script>
     <script src="privacy-vision.js"></script>
     <script src="mock-bank.js"></script>
+    <script src="my-qr.js"></script>
     <script src="transaction-state-machine.js"></script>
     <script src="smart-qr-parser.js"></script>
     <script src="transactions.js"></script>

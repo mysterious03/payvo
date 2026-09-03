@@ -93,6 +93,26 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-service-self')?.addEventListener('click', () => showScreen('transfers-screen'));
     document.getElementById('btn-invite')?.addEventListener('click', () => showScreen('invite-screen'));
 
+    // My QR Code Screen Trigger
+    const routeToMyQR = () => {
+        showScreen('receive-screen');
+        if (typeof myQREngine !== 'undefined' && myQREngine.renderQR) {
+            myQREngine.renderQR();
+        }
+    };
+    document.getElementById('btn-service-myqr')?.addEventListener('click', routeToMyQR);
+
+    // Update Custom QR Amount Button
+    document.getElementById('btn-set-qr-amount')?.addEventListener('click', () => {
+        const amt = document.getElementById('qr-custom-amount')?.value;
+        if (typeof myQREngine !== 'undefined' && myQREngine.renderQR) {
+            myQREngine.renderQR(amt);
+        }
+        if (window.speak) {
+            window.speak(amt ? `Updated QR code to request ${amt} rupees.` : "Updated QR code for open amount.");
+        }
+    });
+
     // ========== SCANNER WIRING ==========
     const routeToScanner = () => {
         showScreen('scan-screen');

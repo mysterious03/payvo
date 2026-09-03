@@ -536,9 +536,35 @@ async function executeSensitiveCommandWithVerification(command, activeScreen) {
 /**
  * Sensitive financial command router (Strictly through Transaction State Machine)
  */
-function executeSensitiveCommand(command, activeScreen) {
-    if (command.includes('pay ') || command.startsWith('pay') || command.startsWith('send')) {
-        const num = parseNumber(command);
+async function executeSensitiveCommand(command, activeScreen) {
+    let parsedIntent = null;
+    if (typeof groqService !== 'undefined' && groqService.parseVoiceIntent) {
+        try {
+            parsedIntent = await groqService.parseVoiceIntent(command);
+        } catch (e) {
+            console.warn('[voice.js] Groq intent fallback:', e);
+        }
+    }
+
+    const num = (parsedIntent && parsedIntent.amount) ? parsedIntent.amount : parseNumber(command);
+    const recipient = (parsedIntent && parsedIntent.recipient) ? parsedIntent.recipient : '';
+
+    if (num && activeScreen !== 'payment-screen') {
+        const destUpi = recipient ? `${recipient.toLowerCase().replace(/\s+/g, '')}@upi` : 'merchant@upi';
+        const destName = recipient || 'Recipient';
+        if (typeof routeToPayment === 'function') {
+            if (window.speak) {
+                window.speak(`Setting up payment of ${num} rupees to ${destName}.`, () => {
+                    routeToPayment(destName, destUpi, num, 'VOICE');
+                });
+            } else {
+                routeToPayment(destName, destUpi, num, 'VOICE');
+            }
+            return;
+        }
+    }
+
+    if (command.includes('pay ') || command.startsWith('pay') || command.startsWith('send') || (parsedIntent && parsedIntent.amount)) {
         if (num && activeScreen === 'payment-screen') {
             const input = document.getElementById('pay-amount');
             if (input) {
@@ -556,32 +582,114 @@ function executeSensitiveCommand(command, activeScreen) {
 }
 
 /**
- * Non-sensitive navigation and UI voice router
+ * Non-sensitive navigation, queries, and UI voice router
  */
-function executeNonSensitiveCommand(command, activeScreen) {
-    if ((command.includes('open') && command.includes('scanner')) || command.includes('scan code')) {
-        if (activeScreen === 'home-screen') {
-            document.getElementById('nav-scan')?.click();
-        }
+async function executeNonSensitiveCommand(command, activeScreen) {
+    const cmd = command.toLowerCase();
+
+    // 1. Try Groq AI Conversational Intent first
+    let parsed = null;
+    if (typeof groqService !== 'undefined' && groqService.parseVoiceIntent) {
+        try {
+            parsed = await groqService.parseVoiceIntent(command);
+        } catch (e) {}
     }
-    else if (command.includes('scan qr') || command.includes('scan it')) {
+
+    const intent = parsed ? parsed.intent : null;
+
+    // --- CASE A: BALANCE INQUIRY ---
+    if (intent === 'CHECK_BALANCE' || cmd.includes('balance') || cmd.includes('how much') || cmd.includes('funds') || cmd.includes('money do i have')) {
+        const bal = typeof window.getBalance === 'function' ? window.getBalance() : 1550.00;
+        const msg = `Your available SwiftPass balance is ${bal.toLocaleString('en-IN')} rupees.`;
+        if (typeof showScreen === 'function') showScreen('home-screen');
+        if (window.speak) window.speak(msg);
+        return;
+    }
+
+    // --- CASE B: TRANSACTION HISTORY / RECENT ACTIVITY ---
+    if (intent === 'TRANSACTION_HISTORY' || cmd.includes('transaction') || cmd.includes('history') || cmd.includes('recent') || cmd.includes('statement') || cmd.includes('past payment') || cmd.includes('who did i pay') || cmd.includes('last payment')) {
+        if (typeof showScreen === 'function') {
+            showScreen('home-screen');
+            setTimeout(() => {
+                const list = document.getElementById('transactions-list');
+                if (list) list.scrollIntoView({ behavior: 'smooth' });
+            }, 300);
+        }
+
+        let msg = "Here is your recent activity.";
+        if (typeof window.getTransactions === 'function') {
+            const txs = window.getTransactions();
+            if (txs && txs.length > 0) {
+                const last = txs[0];
+                msg = `Your last transaction was ${last.type === 'credit' ? 'a credit' : 'a payment'} of ${last.amount} rupees ${last.type === 'credit' ? 'from' : 'to'} ${last.title}.`;
+            }
+        }
+        if (window.speak) window.speak(msg);
+        return;
+    }
+
+    // --- CASE C: GENERATE QR CODE / RECEIVE MONEY ---
+    if (intent === 'GENERATE_QR' || cmd.includes('generate qr') || cmd.includes('my qr') || cmd.includes('receive') || cmd.includes('show qr') || cmd.includes('create qr') || cmd.includes('request money')) {
+        const amount = (parsed && parsed.amount) ? parsed.amount : parseNumber(cmd);
+        if (typeof showScreen === 'function') showScreen('receive-screen');
+        if (typeof myQREngine !== 'undefined' && myQREngine.renderQR) {
+            myQREngine.renderQR(amount);
+        }
+        const msg = amount ? `Displaying your UPI QR code requesting ${amount} rupees.` : "Displaying your personal UPI QR code for Suriya Prakash. Anyone can scan this to pay you.";
+        if (window.speak) window.speak(msg);
+        return;
+    }
+
+    // --- CASE D: SCANNER ---
+    if (intent === 'SCAN_QR' || cmd.includes('open scanner') || cmd.includes('scan') || cmd.includes('camera')) {
         if (activeScreen === 'scan-screen') {
             document.getElementById('btn-simulate-scan')?.click();
         } else {
-            document.getElementById('nav-scan')?.click();
-            setTimeout(() => { document.getElementById('btn-simulate-scan')?.click(); }, 1500);
+            if (typeof showScreen === 'function') {
+                showScreen('scan-screen');
+                if (window.startScanner) window.startScanner();
+            }
         }
+        if (window.speak) window.speak("Opening QR code scanner. Align the QR code inside the camera frame.");
+        return;
     }
-    else if (command.includes('home') || command.includes('go back')) {
-        if (typeof showScreen === 'function') {
-            showScreen('home-screen');
+
+    // --- CASE E: LOAD MONEY / ADD FUNDS ---
+    if (intent === 'LOAD_MONEY' || cmd.includes('load money') || cmd.includes('add money') || cmd.includes('add funds') || cmd.includes('deposit')) {
+        if (typeof showScreen === 'function') showScreen('load-screen');
+        const amount = (parsed && parsed.amount) ? parsed.amount : parseNumber(cmd);
+        if (amount) {
+            const input = document.getElementById('load-amount');
+            if (input) input.value = amount;
         }
+        if (window.speak) window.speak("Opening Add Funds screen.");
+        return;
     }
-    else if (command.includes('transactions') || command.includes('history')) {
-        if (typeof showScreen === 'function') {
-            showScreen('home-screen');
-            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-        }
+
+    // --- CASE F: NAVIGATION ---
+    if (intent === 'GO_HOME' || cmd.includes('home') || cmd.includes('back')) {
+        if (typeof showScreen === 'function') showScreen('home-screen');
+        if (window.speak) window.speak("Going to home screen.");
+        return;
+    }
+
+    if (intent === 'VIEW_CARDS' || cmd.includes('cards') || cmd.includes('card')) {
+        if (typeof showScreen === 'function') showScreen('cards-screen');
+        if (window.speak) window.speak("Viewing your cards.");
+        return;
+    }
+
+    if (intent === 'VIEW_PROFILE' || cmd.includes('profile') || cmd.includes('account settings')) {
+        if (typeof showScreen === 'function') showScreen('profile-screen');
+        if (window.speak) window.speak("Viewing your profile.");
+        return;
+    }
+
+    // --- CASE G: DEFAULT / UNKNOWN CONVERSATIONAL RESPONSE ---
+    if (parsed && parsed.spokenResponse) {
+        if (window.speak) window.speak(parsed.spokenResponse);
+    } else {
+        if (window.speak) window.speak(`I heard "${command}". You can ask to check balance, show transactions, generate QR code, or pay anyone.`);
     }
 }
 

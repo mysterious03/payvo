@@ -26,13 +26,14 @@
             }
 
             try {
-                const systemPrompt = `You are the VoxPay financial speech parser. 
-Extract payment details from user voice commands into strict JSON format with these keys:
+                const systemPrompt = `You are the VoxPay financial voice assistant AI.
+Extract user intentions and payment entities from spoken commands into strict JSON format with these keys:
 {
-  "intent": "PAY" | "CHECK_BALANCE" | "SCAN_QR" | "HISTORY" | "LOAD_MONEY" | "UNKNOWN",
-  "recipient": string (name or phone or VPA if mentioned, else ""),
-  "amount": number (parsed numeric value, else null),
-  "note": string (reason/category if mentioned, else "")
+  "intent": "PAY" | "CHECK_BALANCE" | "TRANSACTION_HISTORY" | "GENERATE_QR" | "SCAN_QR" | "LOAD_MONEY" | "VIEW_CARDS" | "VIEW_PROFILE" | "GO_HOME" | "UNKNOWN",
+  "recipient": string (name, phone or UPI VPA if mentioned, else ""),
+  "amount": number or null (parsed numeric value),
+  "note": string (reason/category if mentioned, else ""),
+  "spokenResponse": string (1 natural, conversational, polite sentence to speak back to the user)
 }`;
 
                 const response = await fetch(this.config.endpoint, {
@@ -49,7 +50,7 @@ Extract payment details from user voice commands into strict JSON format with th
                         ],
                         response_format: { type: 'json_object' },
                         temperature: 0.1,
-                        max_tokens: 150
+                        max_tokens: 180
                     })
                 });
 
