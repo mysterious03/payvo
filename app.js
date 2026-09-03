@@ -382,6 +382,144 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    // PiP Test Simulators (For 1-click testing & demos)
+    window.testSimulateSafe = function () {
+        if (typeof privacyVision !== 'undefined') {
+            privacyVision.targetDetections = [{
+                bbox: [80, 40, 160, 180],
+                confidence: 0.98,
+                areaRatio: 0.45,
+                role: 'OWNER'
+            }];
+            privacyVision.history = [];
+            privacyVision._updateStatus({
+                state: 'SAFE',
+                privacyRisk: false,
+                reason: 'simulated_safe',
+                confidence: 0.98,
+                personCount: 1,
+                onlookerCount: 0,
+                secondaryPersonDetected: false
+            });
+        }
+    };
+
+    window.testSimulateOnlooker = function () {
+        if (typeof privacyVision !== 'undefined') {
+            privacyVision.targetDetections = [
+                { bbox: [80, 40, 160, 180], confidence: 0.98, areaRatio: 0.45, role: 'OWNER' },
+                { bbox: [190, 20, 110, 150], confidence: 0.92, areaRatio: 0.22, role: 'ONLOOKER' }
+            ];
+            privacyVision.history = [
+                { onlooker: true }, { onlooker: true }, { onlooker: true }, { onlooker: true }, { onlooker: true }, { onlooker: true }
+            ];
+            privacyVision._updateStatus({
+                state: 'POSSIBLE_OBSERVER',
+                privacyRisk: true,
+                reason: 'shoulder_surfer_detected',
+                confidence: 0.95,
+                personCount: 2,
+                onlookerCount: 1,
+                secondaryPersonDetected: true
+            });
+        }
+    };
+
+    // Voice Biometrics Enrollment Controller
+    const enrollPhrases = [
+        "Pay five hundred rupees with VoxPay",
+        "Check my available SwiftPass balance",
+        "Authorize secure voice payment transaction"
+    ];
+    let enrollStep = 0;
+    const enrollSamples = [];
+
+    document.getElementById('btn-enroll-voice')?.addEventListener('click', () => {
+        enrollStep = 0;
+        enrollSamples.length = 0;
+        const modal = document.getElementById('voice-enroll-modal');
+        const progressEl = document.getElementById('enroll-progress-text');
+        const phraseEl = document.getElementById('enroll-prompt-phrase');
+        if (modal) modal.style.display = 'flex';
+        if (progressEl) progressEl.textContent = 'Sample 1 of 3: Speak the phrase below';
+        if (phraseEl) phraseEl.textContent = `"${enrollPhrases[0]}"`;
+    });
+
+    document.getElementById('btn-start-enroll-sample')?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-start-enroll-sample');
+        const progressEl = document.getElementById('enroll-progress-text');
+        const phraseEl = document.getElementById('enroll-prompt-phrase');
+        if (btn) {
+            btn.textContent = '🎙️ Listening... Speak now!';
+            btn.style.background = '#ef4444';
+            btn.style.color = '#fff';
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+            const source = audioCtx.createMediaStreamSource(stream);
+            const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+            const pcmData = [];
+            processor.onaudioprocess = (e) => {
+                const input = e.inputBuffer.getChannelData(0);
+                pcmData.push(...input);
+            };
+
+            source.connect(processor);
+            processor.connect(audioCtx.destination);
+
+            // Record 2.2 seconds of speech
+            setTimeout(async () => {
+                processor.disconnect();
+                source.disconnect();
+                stream.getTracks().forEach(t => t.stop());
+
+                const float32Array = new Float32Array(pcmData);
+                enrollSamples.push(float32Array);
+                enrollStep++;
+
+                if (enrollStep < 3) {
+                    if (progressEl) progressEl.textContent = `✓ Sample ${enrollStep} Saved! Now Sample ${enrollStep + 1} of 3:`;
+                    if (phraseEl) phraseEl.textContent = `"${enrollPhrases[enrollStep]}"`;
+                    if (btn) {
+                        btn.textContent = '🔴 Record Next Sample';
+                        btn.style.background = '#b4f056';
+                        btn.style.color = '#000';
+                    }
+                    if (window.speak) window.speak(`Sample ${enrollStep} recorded. Please speak the next phrase.`);
+                } else {
+                    // Finalize Enrollment with SpeakerVerification
+                    if (typeof speakerVerification !== 'undefined' && speakerVerification.enrollSpeaker) {
+                        await speakerVerification.enrollSpeaker('user_primary', enrollSamples);
+                    }
+                    if (progressEl) progressEl.textContent = '🎉 Voice Profile Enrolled & Locked!';
+                    if (phraseEl) phraseEl.textContent = 'VoxPay Voice Brain is now exclusively locked to YOUR voice!';
+                    if (btn) {
+                        btn.textContent = '✓ Voice Enrollment Complete';
+                        btn.style.background = '#10b981';
+                        btn.style.color = '#fff';
+                    }
+                    if (window.speak) window.speak("Voice enrollment successful. VoxPay is now locked to your voice.");
+                    setTimeout(() => {
+                        const modal = document.getElementById('voice-enroll-modal');
+                        if (modal) modal.style.display = 'none';
+                    }, 2500);
+                }
+            }, 2200);
+
+        } catch (err) {
+            console.error('Enrollment error:', err);
+            if (btn) {
+                btn.textContent = '🔴 Record My Voice Sample';
+                btn.style.background = '#b4f056';
+                btn.style.color = '#000';
+            }
+            alert('Could not access microphone for enrollment: ' + err.message);
+        }
+    });
+
     // Auto-start Privacy Vision Live COCO-SSD Edge Model on launch
     setTimeout(() => {
         if (typeof privacyVision !== 'undefined' && privacyVision.start) {
@@ -390,4 +528,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 1200);
 
 });
+
 

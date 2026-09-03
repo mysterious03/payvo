@@ -287,9 +287,11 @@ function onScanSuccess(decodedText, statusEl) {
 document.addEventListener('DOMContentLoaded', () => {
     const simBtn = document.getElementById('btn-simulate-scan');
     if (simBtn) {
-        simBtn.addEventListener('click', () => {
+        simBtn.onclick = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             onScanSuccess('upi://pay?pa=freshmart@icici&pn=FreshMart%20Store&am=499.00&cu=INR&tn=Groceries');
-        });
+        };
     }
 
     const fileInput = document.getElementById('qr-upload');
@@ -322,55 +324,18 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /**
- * Display dynamic test scannable QR in Scanner Screen
+ * Instant 1-Tap Scannable QR Simulation in Scanner Screen
  */
 window.displayTestQR = function (upiUri, title) {
-    const modal = document.getElementById('sample-qr-modal');
-    const holder = document.getElementById('sample-qr-canvas-holder');
-    const titleEl = document.getElementById('sample-qr-title');
-
-    if (!modal || !holder) return;
-    modal.style.display = 'flex';
-    holder.innerHTML = '';
-
-    if (titleEl) {
-        titleEl.textContent = `Tap QR to instant scan & pay ${title}`;
+    const statusEl = document.getElementById('scan-status');
+    if (statusEl) {
+        statusEl.textContent = '✅ Scanned ' + (title || 'Merchant QR');
+        statusEl.style.color = '#b4f056';
     }
-
-    if (typeof myQREngine !== 'undefined' && myQREngine.generateMatrix) {
-        const matrix = myQREngine.generateMatrix(upiUri);
-        const canvas = document.createElement('canvas');
-        canvas.width = 158;
-        canvas.height = 158;
-        const ctx = canvas.getContext('2d');
-        const size = matrix.length;
-        const cell = 158 / size;
-
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, 158, 158);
-        ctx.fillStyle = '#000000';
-
-        for (let r = 0; r < size; r++) {
-            for (let c = 0; c < size; c++) {
-                if (matrix[r][c]) {
-                    ctx.fillRect(c * cell, r * cell, Math.ceil(cell), Math.ceil(cell));
-                }
-            }
-        }
-        canvas.style.borderRadius = '8px';
-        canvas.style.cursor = 'pointer';
-        holder.appendChild(canvas);
-    }
-
-    holder.onclick = () => {
-        if (typeof window.stopScanner === 'function') window.stopScanner();
-        const statusEl = document.getElementById('scan-status');
-        if (statusEl) {
-            statusEl.textContent = '✅ Scanned ' + title;
-            statusEl.style.color = '#b4f056';
-        }
-        setTimeout(() => {
-            onScanSuccess(upiUri, statusEl);
-        }, 150);
-    };
+    onScanSuccess(upiUri, statusEl);
 };
+
+window.simulateDirectScan = function (uri = 'upi://pay?pa=freshmart@icici&pn=FreshMart%20Store&am=499.00&cu=INR&tn=Groceries') {
+    onScanSuccess(uri);
+};
+
