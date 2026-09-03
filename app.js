@@ -333,18 +333,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    setupPrivacyTrackerHUD();
+    // Toggle Vision Monitor Size (Compact PIP vs Expanded)
+    window.toggleVisionMonitorSize = function () {
+        const mon = document.getElementById('coco-vision-monitor');
+        const holder = document.getElementById('coco-canvas-holder');
+        const btn = document.getElementById('coco-toggle-btn');
+        if (!mon || !holder) return;
 
-    // Auto-trigger Privacy Vision camera tracker when entering PIN
-    const origShowPin = window.showPinScreen;
-    window.showPinScreen = function () {
-        if (typeof origShowPin === 'function') origShowPin();
+        const isExpanded = mon.style.width === '280px';
+        if (isExpanded) {
+            mon.style.width = '170px';
+            holder.style.height = '125px';
+            if (btn) btn.textContent = '▢';
+        } else {
+            mon.style.width = '280px';
+            holder.style.height = '210px';
+            if (btn) btn.textContent = '—';
+        }
+    };
+
+    // Auto-start Privacy Vision Live COCO-SSD Edge Model on launch
+    setTimeout(() => {
         if (typeof privacyVision !== 'undefined' && privacyVision.start) {
             privacyVision.start({ showDebugCanvas: true });
         }
-        const canvas = document.getElementById('privacy-debug-canvas');
-        if (canvas) canvas.style.display = 'block';
-    };
+    }, 1200);
 
 });
 

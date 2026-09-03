@@ -355,6 +355,37 @@
             this.state = newStatus.state;
             this.status = newStatus;
 
+            // Update COCO Vision Monitor UI Elements
+            if (typeof document !== 'undefined') {
+                const spinner = document.getElementById('coco-loading-spinner');
+                if (spinner) spinner.style.display = 'none';
+
+                const countEl = document.getElementById('coco-persons-count');
+                const riskEl = document.getElementById('coco-risk-state');
+                const dotEl = document.getElementById('coco-status-dot');
+                const boxEl = document.getElementById('coco-vision-monitor');
+
+                if (countEl) countEl.textContent = `Persons: ${newStatus.personCount}`;
+
+                if (riskEl && dotEl && boxEl) {
+                    if (newStatus.privacyRisk || newStatus.personCount > 1) {
+                        riskEl.textContent = '⚠️ ONLOOKER';
+                        riskEl.style.color = '#ef4444';
+                        dotEl.style.background = '#ef4444';
+                        dotEl.style.boxShadow = '0 0 10px #ef4444';
+                        boxEl.style.borderColor = '#ef4444';
+                        boxEl.style.boxShadow = '0 12px 35px rgba(0,0,0,0.7), 0 0 25px rgba(239,68,68,0.4)';
+                    } else {
+                        riskEl.textContent = 'SAFE';
+                        riskEl.style.color = '#10b981';
+                        dotEl.style.background = '#10b981';
+                        dotEl.style.boxShadow = '0 0 8px #10b981';
+                        boxEl.style.borderColor = '#10b981';
+                        boxEl.style.boxShadow = '0 12px 35px rgba(0,0,0,0.7), 0 0 20px rgba(16,185,129,0.25)';
+                    }
+                }
+            }
+
             // Audio Warning Rate-Limiter
             if (newStatus.privacyRisk) {
                 const now = Date.now();
@@ -371,30 +402,60 @@
         }
 
         _renderDebugOverlay(w, h, sortedPersons, lighting) {
+            if (!this.debugCtx || !this.debugCanvas) return;
             const ctx = this.debugCtx;
-            ctx.clearRect(0, 0, this.debugCanvas.width, this.debugCanvas.height);
-            ctx.drawImage(this.workCanvas, 0, 0, this.debugCanvas.width, this.debugCanvas.height);
+            const dw = this.debugCanvas.width;
+            const dh = this.debugCanvas.height;
 
-            const scaleX = this.debugCanvas.width / w;
-            const scaleY = this.debugCanvas.height / h;
+            ctx.clearRect(0, 0, dw, dh);
+            ctx.drawImage(this.workCanvas, 0, 0, dw, dh);
+
+            const scaleX = dw / w;
+            const scaleY = dh / h;
+
+            // Visual Grid Overlay
+            ctx.strokeStyle = 'rgba(16, 185, 129, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(dw / 2, 0); ctx.lineTo(dw / 2, dh);
+            ctx.moveTo(0, dh / 2); ctx.lineTo(dw, dh / 2);
+            ctx.stroke();
 
             sortedPersons.forEach((p, idx) => {
                 const [bx, by, bw, bh] = p.bbox;
                 const isPrimary = idx === 0;
 
+                const sx = bx * scaleX;
+                const sy = by * scaleY;
+                const sw = bw * scaleX;
+                const sh = bh * scaleY;
+
+                // Cyber Bounding Box with Corner Accents
                 ctx.strokeStyle = isPrimary ? '#10b981' : '#ef4444';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(bx * scaleX, by * scaleY, bw * scaleX, bh * scaleY);
+                ctx.strokeRect(sx, sy, sw, sh);
 
-                ctx.fillStyle = isPrimary ? 'rgba(16, 185, 129, 0.8)' : 'rgba(239, 68, 68, 0.8)';
-                ctx.fillRect(bx * scaleX, (by * scaleY) - 16, 110, 16);
+                // Corner brackets
+                const cLen = Math.min(12, sw / 3);
+                ctx.strokeStyle = isPrimary ? '#b4f056' : '#ff7777';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(sx, sy + cLen); ctx.lineTo(sx, sy); ctx.lineTo(sx + cLen, sy);
+                ctx.moveTo(sx + sw - cLen, sy); ctx.lineTo(sx + sw, sy); ctx.lineTo(sx + sw, sy + cLen);
+                ctx.moveTo(sx, sy + sh - cLen); ctx.lineTo(sx, sy + sh); ctx.lineTo(sx + cLen, sy + sh);
+                ctx.moveTo(sx + sw - cLen, sy + sh); ctx.lineTo(sx + sw, sy + sh); ctx.lineTo(sx + sw, sy + sh - cLen);
+                ctx.stroke();
+
+                // Pill Tag
+                ctx.fillStyle = isPrimary ? 'rgba(16, 185, 129, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+                ctx.fillRect(sx, Math.max(0, sy - 18), 125, 18);
 
                 ctx.fillStyle = '#ffffff';
                 ctx.font = 'bold 9px monospace';
                 ctx.fillText(
-                    `${isPrimary ? 'PRIMARY' : 'OBSERVER'} ${Math.round(p.confidence * 100)}%`,
-                    (bx * scaleX) + 4,
-                    (by * scaleY) - 4
+                    `${isPrimary ? '👤 PRIMARY' : '⚠️ ONLOOKER'} ${Math.round(p.confidence * 100)}%`,
+                    sx + 4,
+                    Math.max(12, sy - 5)
                 );
             });
         }

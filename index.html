@@ -691,9 +691,32 @@
 
     </div>
 
-    <!-- Dev Privacy Debug Overlay Canvas -->
-    <canvas id="privacy-debug-canvas" width="320" height="240"
-        style="display:none; position:fixed; top:12px; right:12px; z-index:99999; border:2px solid #10b981; background:rgba(0,0,0,0.85); width:140px; height:105px; pointer-events:none; border-radius:8px; box-shadow:0 4px 20px rgba(0,0,0,0.5);"></canvas>
+    <!-- Live COCO-SSD Vision Monitor PiP Window -->
+    <div id="coco-vision-monitor" style="position: fixed; top: 16px; right: 16px; z-index: 99999; background: rgba(10, 15, 26, 0.92); border: 2px solid #10b981; border-radius: 14px; box-shadow: 0 12px 35px rgba(0,0,0,0.7), 0 0 20px rgba(16,185,129,0.25); overflow: hidden; backdrop-filter: blur(16px); transition: all 0.3s ease; width: 170px;">
+        <!-- Header -->
+        <div style="background: rgba(16,185,129,0.15); padding: 6px 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(16,185,129,0.25); cursor: pointer;" onclick="window.toggleVisionMonitorSize()">
+            <div style="display: flex; align-items: center; gap: 6px;">
+                <span id="coco-status-dot" style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; animation: pulse-glow 1s infinite;"></span>
+                <span style="font-size: 10px; font-weight: 800; color: #10b981; letter-spacing: 0.5px; text-transform: uppercase;">COCO-SSD AI</span>
+            </div>
+            <span id="coco-toggle-btn" style="font-size: 11px; color: #94a3b8; font-weight: bold;">▢</span>
+        </div>
+        
+        <!-- Canvas Container -->
+        <div id="coco-canvas-holder" style="position: relative; width: 100%; height: 125px; background: #000;">
+            <canvas id="privacy-debug-canvas" width="320" height="240" style="width: 100%; height: 100%; object-fit: cover; display: block;"></canvas>
+            <div id="coco-loading-spinner" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: #10b981; font-size: 10px; font-weight: bold; gap: 6px;">
+                <div class="spinner" style="width: 18px; height: 18px; border-width: 2px;"></div>
+                <span>Scanning...</span>
+            </div>
+        </div>
+
+        <!-- Telemetry Stats Footer -->
+        <div id="coco-telemetry" style="padding: 4px 8px; font-size: 9px; color: #94a3b8; font-family: monospace; font-weight: 700; border-top: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: space-between;">
+            <span id="coco-persons-count">Persons: 0</span>
+            <span id="coco-risk-state" style="color: #10b981;">SAFE</span>
+        </div>
+    </div>
 
     <!-- Core Application & Security Layer Scripts -->
     <script src="camera-manager.js"></script>

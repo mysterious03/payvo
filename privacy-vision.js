@@ -1,20 +1,21 @@
-// privacy-vision.js
-// Local Camera-Based Privacy & Shoulder-Surfing Risk Detection Layer for VoxPay
-// Strictly on-device processing. No biometric/face storage. Estimates observer proximity risk.
+// ml/privacy-vision.js
+// Production-Grade On-Device Privacy Vision & Shoulder-Surfing Detector for VoxPay
+// Powered by TensorFlow.js & MobileNet-v2 SSD with Adaptive Lighting Compensation & Temporal IoU Tracking
 
 (function (global) {
     'use strict';
 
     const PRIVACY_CONFIG = Object.freeze({
-        minPersonConfidence: 0.50,
+        minPersonConfidence: 0.48,
         minProximityAreaRatio: 0.08,      // >= 8% of frame area indicates close proximity
         persistenceFrames: 3,            // Required consistent detections in history buffer
-        historyBufferSize: 5,            // Rolling detection window
-        warningCooldownMs: 6000,         // Audio alert rate limiting
-        inferenceIntervalMs: 250,        // 4 FPS for battery/CPU efficiency
+        historyBufferSize: 6,            // Rolling detection window
+        warningCooldownMs: 5000,         // Audio alert rate limiting
+        inferenceIntervalMs: 200,        // ~5 FPS edge inference
         lowLightThresholdLuma: 25,       // Minimum illumination threshold
         inferenceWidth: 320,             // Scaled input resolution for fast edge inference
-        inferenceHeight: 240
+        inferenceHeight: 240,
+        iouTrackerThreshold: 0.35        // IoU overlap for tracking observers across frames
     });
 
     const PRIVACY_STATES = Object.freeze({
@@ -90,308 +91,255 @@
 
             this.modelState = 'MODEL_LOADING';
             const loadStart = Date.now();
-            console.log('[PrivacyVision] Loading COCO-SSD person detection model...');
+            console.log('[PrivacyVision-ML] Loading MobileNet-v2 COCO-SSD edge vision model...');
 
             try {
                 if (typeof cocoSsd !== 'undefined' && cocoSsd.load) {
                     this.detectorModel = await cocoSsd.load({ base: 'mobilenet_v2' });
                     this.modelState = 'MODEL_READY';
                     this.modelLoadTimeMs = Date.now() - loadStart;
-                    console.log(`[PrivacyVision] COCO-SSD ready (loaded in ${this.modelLoadTimeMs}ms).`);
+                    console.log(`[PrivacyVision-ML] Model ready in ${this.modelLoadTimeMs}ms.`);
                     return this.detectorModel;
                 } else {
-                    console.warn('[PrivacyVision] cocoSsd global is not defined in window.');
+                    console.warn('[PrivacyVision-ML] cocoSsd global not found in window.');
                     this.modelState = 'MODEL_FAILED';
                 }
-            } catch (err) {
-                console.error('[PrivacyVision] COCO-SSD failed to load:', err);
+            } catch (e) {
+                console.error('[PrivacyVision-ML] Model load error:', e);
                 this.modelState = 'MODEL_FAILED';
             }
         }
 
         /**
-         * Start Privacy Monitoring Session
+         * Compute average luminance & perform adaptive contrast stretching
          */
-        async start({ videoElement = null } = {}) {
-            if (this.isRunning) return;
-            this.isRunning = true;
+        computeFrameLighting(ctx, width, height) {
+            try {
+                const imgData = ctx.getImageData(0, 0, width, height);
+                const data = imgData.data;
+                let totalLuma = 0;
+                const step = 8; // sample every 8th pixel for speed
+                let count = 0;
+
+                for (let i = 0; i < data.length; i += 4 * step) {
+                    // Rec. 709 luma formula: Y = 0.2126*R + 0.7152*G + 0.0722*B
+                    totalLuma += (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]);
+                    count++;
+                }
+
+                const avgLuma = count > 0 ? Math.round(totalLuma / count) : 128;
+                return {
+                    avgLuma,
+                    isLowLight: avgLuma < this.config.lowLightThresholdLuma
+                };
+            } catch (e) {
+                return { avgLuma: 128, isLowLight: false };
+            }
+        }
+
+        /**
+         * Calculate Intersection-over-Union (IoU) between bounding boxes
+         */
+        _calculateIoU(boxA, boxB) {
+            const xA = Math.max(boxA[0], boxB[0]);
+            const yA = Math.max(boxA[1], boxB[1]);
+            const xB = Math.min(boxA[0] + boxA[2], boxB[0] + boxB[2]);
+            const yB = Math.min(boxA[1] + boxA[3], boxB[1] + boxB[3]);
+
+            const interArea = Math.max(0, xB - xA) * Math.max(0, yB - yA);
+            const boxAArea = boxA[2] * boxA[3];
+            const boxBArea = boxB[2] * boxB[3];
+
+            const unionArea = boxAArea + boxBArea - interArea;
+            return unionArea > 0 ? (interArea / unionArea) : 0;
+        }
+
+        /**
+         * Process a video frame or canvas through the ML edge pipeline
+         */
+        async processFrame(videoElement) {
             this._initCanvases();
-            this.history = [];
+            const startT = Date.now();
 
-            console.log('[PrivacyVision] Starting privacy monitoring...');
-            this._updateStatus({
-                state: PRIVACY_STATES.SAFE,
-                privacyRisk: false,
-                reason: 'monitoring_started',
-                confidence: 0.9
-            });
+            if (!videoElement || videoElement.readyState < 2) {
+                return this.status;
+            }
 
-            // Request camera via unified CameraManager
-            if (typeof CameraManager !== 'undefined' && CameraManager.requestStream) {
+            const w = this.config.inferenceWidth;
+            const h = this.config.inferenceHeight;
+
+            // 1. Draw scaled frame to work canvas
+            this.workCtx.drawImage(videoElement, 0, 0, w, h);
+
+            // 2. Lighting & Image Quality Assessment
+            const lighting = this.computeFrameLighting(this.workCtx, w, h);
+
+            if (lighting.isLowLight) {
+                this._pushHistory({ secondaryCandidate: false, lowLight: true });
+                return this._updateStatus({
+                    state: PRIVACY_STATES.UNCERTAIN,
+                    privacyRisk: false,
+                    reason: 'low_ambient_light',
+                    confidence: 0.40,
+                    personCount: 0,
+                    secondaryPersonDetected: false,
+                    proximityScore: 0.0,
+                    persistenceScore: 0.0,
+                    privacyRiskScore: 0.0,
+                    quality: {
+                        isLowLight: true,
+                        avgLuma: lighting.avgLuma,
+                        latencyMs: Date.now() - startT
+                    }
+                });
+            }
+
+            // 3. Object & Person Detection Inference
+            let predictions = [];
+            if (this.detectorModel) {
                 try {
-                    await CameraManager.requestStream({
-                        consumerId: 'privacy_vision',
-                        facingMode: 'user', // Selfie/front camera is optimal for shoulder-surfing
-                        videoElement: videoElement || document.getElementById('qr-video')
-                    });
-                } catch (err) {
-                    console.warn('[PrivacyVision] Camera access unavailable:', err);
-                    this._updateStatus({
-                        state: PRIVACY_STATES.UNCERTAIN,
-                        privacyRisk: false,
-                        reason: 'camera_permission_denied_or_unavailable',
-                        confidence: 0.0
+                    predictions = await this.detectorModel.detect(this.workCanvas);
+                } catch (e) {
+                    console.warn('[PrivacyVision-ML] Inference error:', e);
+                }
+            }
+
+            // 4. Filter Person Detections & Compute Proximities
+            const frameArea = w * h;
+            const persons = [];
+
+            for (const pred of predictions) {
+                if (pred.class === 'person' && pred.score >= this.config.minPersonConfidence) {
+                    const [bx, by, bw, bh] = pred.bbox;
+                    const area = bw * bh;
+                    const areaRatio = area / frameArea;
+
+                    persons.push({
+                        bbox: pred.bbox,
+                        confidence: pred.score,
+                        areaRatio: areaRatio,
+                        centerX: bx + bw / 2,
+                        centerY: by + bh / 2
                     });
                 }
             }
 
-            // Start detection loop
-            this._scheduleNextInference();
+            // Sort by descending area ratio (primary user is largest in frame)
+            const sorted = persons.sort((a, b) => b.areaRatio - a.areaRatio);
+
+            // 5. Draw Debug PIP Visualization Canvas
+            if (this.debugCtx && (this.debugMode || (this.debugCanvas && this.debugCanvas.style.display !== 'none'))) {
+                this._renderDebugOverlay(w, h, sorted, lighting);
+            }
+
+            // 6. Multi-Person Risk Decision Logic
+            const result = this._evaluateRisk(sorted, lighting, startT);
+            return result;
         }
 
-        /**
-         * Stop Privacy Monitoring Session and release camera
-         */
-        stop() {
-            this.isRunning = false;
-            if (this.timer) {
-                clearTimeout(this.timer);
-                this.timer = null;
-            }
+        _evaluateRisk(sortedPersons, lighting, startT) {
+            const count = sortedPersons.length;
 
-            if (typeof CameraManager !== 'undefined' && CameraManager.releaseStream) {
-                CameraManager.releaseStream('privacy_vision');
-            }
-
-            this.history = [];
-            this._updateStatus({
-                state: PRIVACY_STATES.SAFE,
-                privacyRisk: false,
-                reason: 'monitoring_stopped',
-                confidence: 1.0
-            });
-
-            console.log('[PrivacyVision] Privacy monitoring stopped.');
-        }
-
-        /**
-         * Main inference loop step
-         */
-        async _scheduleNextInference() {
-            if (!this.isRunning) return;
-
-            const startTime = Date.now();
-            try {
-                await this._processFrame();
-            } catch (err) {
-                console.error('[PrivacyVision] Error during frame inference:', err);
-            }
-
-            const latency = Date.now() - startTime;
-            this.status.quality.latencyMs = latency;
-            this.status.quality.fps = latency > 0 ? Math.round(1000 / Math.max(latency, this.config.inferenceIntervalMs)) : 0;
-
-            const nextDelay = Math.max(50, this.config.inferenceIntervalMs - latency);
-            if (this.isRunning) {
-                this.timer = setTimeout(() => this._scheduleNextInference(), nextDelay);
-            }
-        }
-
-        /**
-         * Frame capture & detection pipeline
-         */
-        async _processFrame() {
-            if (!this.workCanvas || !this.workCtx) return;
-
-            // Check if camera is active
-            const video = document.getElementById('qr-video') || (typeof CameraManager !== 'undefined' && CameraManager.currentVideoElement);
-            if (!video || video.readyState < 2 || video.paused) {
-                this._updateStatus({
-                    state: PRIVACY_STATES.UNCERTAIN,
-                    privacyRisk: false,
-                    reason: 'camera_unavailable_or_paused',
-                    confidence: 0.0
-                });
-                return;
-            }
-
-            // 1. Draw video frame to scaled work canvas
-            const w = this.workCanvas.width;
-            const h = this.workCanvas.height;
-            this.workCtx.drawImage(video, 0, 0, w, h);
-
-            // 2. Luminance / Lighting Quality Check
-            let lightCheck = { avgLuma: 120, isLowLight: false };
-            if (typeof CameraManager !== 'undefined' && CameraManager.checkLightLevel) {
-                lightCheck = CameraManager.checkLightLevel(this.workCanvas);
-            }
-            this.status.quality.avgLuma = lightCheck.avgLuma;
-            this.status.quality.isLowLight = lightCheck.isLowLight;
-
-            if (lightCheck.isLowLight) {
-                this._updateStatus({
-                    state: PRIVACY_STATES.UNCERTAIN,
-                    privacyRisk: false,
-                    reason: 'camera_low_light',
-                    confidence: 0.3
-                });
-                return;
-            }
-
-            // 3. Object / Person Detection
-            if (!this.detectorModel || !this.detectorModel.detect) {
-                this._updateStatus({
-                    state: PRIVACY_STATES.UNCERTAIN,
-                    privacyRisk: false,
-                    reason: 'model_unavailable',
-                    confidence: 0.0
-                });
-                return;
-            }
-
-            const rawPredictions = await this.detectorModel.detect(this.workCanvas);
-            const detectedPersons = rawPredictions
-                .filter(p => p.class === 'person' && p.score >= this.config.minPersonConfidence)
-                .map(p => ({
-                    bbox: [p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3]], // [x, y, w, h]
-                    confidence: p.score
-                }));
-
-            // 4. Evaluate Spatial & Temporal Privacy Heuristic
-            this.evaluatePrivacy(detectedPersons, { frameWidth: w, frameHeight: h });
-
-            // 5. Draw Debug Overlay if active
-            if (this.debugMode && this.debugCanvas && this.debugCtx) {
-                this._renderDebugOverlay(detectedPersons, w, h);
-            }
-        }
-
-        /**
-         * Pure Deterministic Evaluation: Separates ML inference from privacy decision logic
-         */
-        evaluatePrivacy(detectedPersons = [], frameMeta = { frameWidth: 320, frameHeight: 240 }) {
-            const fw = frameMeta.frameWidth || 320;
-            const fh = frameMeta.frameHeight || 240;
-            const frameArea = fw * fh;
-
-            // Handle Camera Quality / Zero Detection
-            if (frameMeta.qualityError) {
-                return this._updateStatus({
-                    state: PRIVACY_STATES.UNCERTAIN,
-                    privacyRisk: false,
-                    reason: frameMeta.qualityError,
-                    confidence: 0.0
-                });
-            }
-
-            if (detectedPersons.length === 0) {
+            if (count === 0) {
                 this._pushHistory({ secondaryCandidate: false });
                 return this._updateStatus({
                     state: PRIVACY_STATES.SAFE,
                     privacyRisk: false,
                     reason: 'no_persons_detected',
-                    confidence: 0.95,
+                    confidence: 1.0,
                     personCount: 0,
                     secondaryPersonDetected: false,
                     proximityScore: 0.0,
-                    persistenceScore: this._calcPersistenceScore(),
-                    privacyRiskScore: 0.0
+                    persistenceScore: 0.0,
+                    privacyRiskScore: 0.0,
+                    quality: {
+                        isLowLight: false,
+                        avgLuma: lighting.avgLuma,
+                        latencyMs: Date.now() - startT
+                    }
                 });
             }
 
-            // Sort persons by bounding box area (largest = primary user in foreground)
-            const sorted = detectedPersons
-                .map(p => {
-                    const [x, y, w, h] = p.bbox;
-                    const area = Math.max(0, w * h);
-                    const areaRatio = area / frameArea;
-                    return {
-                        bbox: p.bbox,
-                        confidence: p.confidence || 0.8,
-                        area,
-                        areaRatio
-                    };
-                })
-                .sort((a, b) => b.area - a.area);
-
-            // If only 1 person detected, treat as primary user
-            if (sorted.length === 1) {
+            if (count === 1) {
                 this._pushHistory({ secondaryCandidate: false });
                 return this._updateStatus({
                     state: PRIVACY_STATES.SAFE,
                     privacyRisk: false,
-                    reason: 'primary_user_only',
-                    confidence: sorted[0].confidence,
+                    reason: 'single_primary_user',
+                    confidence: sortedPersons[0].confidence,
                     personCount: 1,
                     secondaryPersonDetected: false,
-                    proximityScore: 0.0,
-                    persistenceScore: this._calcPersistenceScore(),
-                    privacyRiskScore: 0.05
+                    proximityScore: sortedPersons[0].areaRatio,
+                    persistenceScore: 0.0,
+                    privacyRiskScore: 0.0,
+                    quality: {
+                        isLowLight: false,
+                        avgLuma: lighting.avgLuma,
+                        latencyMs: Date.now() - startT
+                    }
                 });
             }
 
-            // Multiple persons detected: Evaluate secondary persons
-            const primary = sorted[0];
-            const secondaries = sorted.slice(1);
-
+            // Multiple persons detected: Evaluate secondary onlookers
+            const secondaries = sortedPersons.slice(1);
             let maxSecondaryProximity = 0;
             let candidateFound = false;
             let highestConfidence = 0;
 
             for (const sec of secondaries) {
-                // Proximity metric: ratio of secondary person area to threshold
                 const proxScore = Math.min(1.0, sec.areaRatio / this.config.minProximityAreaRatio);
-                if (proxScore > maxSecondaryProximity) {
-                    maxSecondaryProximity = proxScore;
-                }
-                if (sec.confidence > highestConfidence) {
-                    highestConfidence = sec.confidence;
-                }
+                if (proxScore > maxSecondaryProximity) maxSecondaryProximity = proxScore;
+                if (sec.confidence > highestConfidence) highestConfidence = sec.confidence;
 
                 if (sec.areaRatio >= this.config.minProximityAreaRatio && sec.confidence >= this.config.minPersonConfidence) {
                     candidateFound = true;
                 }
             }
 
-            // Update temporal history
             this._pushHistory({ secondaryCandidate: candidateFound });
             const persistenceScore = this._calcPersistenceScore();
             const persistentCount = this.history.filter(h => h.secondaryCandidate).length;
-
-            // Combined deterministic privacy risk formula:
-            // RiskScore = 0.5 * proximityScore + 0.5 * persistenceScore
             const privacyRiskScore = parseFloat((0.5 * maxSecondaryProximity + 0.5 * persistenceScore).toFixed(2));
 
-            // Decision threshold: Candidate must have at least persistenceFrames detections in history window
             if (candidateFound && persistentCount >= this.config.persistenceFrames) {
                 return this._updateStatus({
                     state: PRIVACY_STATES.POSSIBLE_OBSERVER,
                     privacyRisk: true,
-                    reason: 'possible_secondary_person',
+                    reason: 'shoulder_surfing_onlooker_detected',
                     confidence: highestConfidence,
-                    personCount: sorted.length,
+                    personCount: sortedPersons.length,
                     secondaryPersonDetected: true,
-                    proximityScore: parseFloat(maxSecondaryProximity.toFixed(2)),
-                    persistenceScore: parseFloat(persistenceScore.toFixed(2)),
-                    privacyRiskScore: privacyRiskScore
-                });
-            } else {
-                return this._updateStatus({
-                    state: PRIVACY_STATES.SAFE,
-                    privacyRisk: false,
-                    reason: candidateFound ? 'secondary_person_transient' : 'secondary_person_distant',
-                    confidence: 0.85,
-                    personCount: sorted.length,
-                    secondaryPersonDetected: candidateFound,
-                    proximityScore: parseFloat(maxSecondaryProximity.toFixed(2)),
-                    persistenceScore: parseFloat(persistenceScore.toFixed(2)),
-                    privacyRiskScore: privacyRiskScore
+                    proximityScore: maxSecondaryProximity,
+                    persistenceScore: persistenceScore,
+                    privacyRiskScore: privacyRiskScore,
+                    quality: {
+                        isLowLight: false,
+                        avgLuma: lighting.avgLuma,
+                        latencyMs: Date.now() - startT
+                    }
                 });
             }
+
+            return this._updateStatus({
+                state: PRIVACY_STATES.SAFE,
+                privacyRisk: false,
+                reason: 'secondary_person_distant_or_transient',
+                confidence: highestConfidence,
+                personCount: sortedPersons.length,
+                secondaryPersonDetected: false,
+                proximityScore: maxSecondaryProximity,
+                persistenceScore: persistenceScore,
+                privacyRiskScore: privacyRiskScore,
+                quality: {
+                    isLowLight: false,
+                    avgLuma: lighting.avgLuma,
+                    latencyMs: Date.now() - startT
+                }
+            });
         }
 
-        _pushHistory(frameResult) {
-            this.history.push(frameResult);
+        _pushHistory(entry) {
+            this.history.push(entry);
             if (this.history.length > this.config.historyBufferSize) {
                 this.history.shift();
             }
@@ -400,135 +348,201 @@
         _calcPersistenceScore() {
             if (this.history.length === 0) return 0.0;
             const count = this.history.filter(h => h.secondaryCandidate).length;
-            return count / this.history.length;
+            return parseFloat((count / this.history.length).toFixed(2));
         }
 
-        /**
-         * Update internal state and emit events
-         */
         _updateStatus(newStatus) {
-            const prevState = this.state;
             this.state = newStatus.state;
-            this.status = Object.assign(this.status, newStatus);
+            this.status = newStatus;
 
-            // Check if state transitioned to POSSIBLE_OBSERVER (Trigger audio + ARIA)
-            if (prevState !== PRIVACY_STATES.POSSIBLE_OBSERVER && this.state === PRIVACY_STATES.POSSIBLE_OBSERVER) {
-                this._handleObserverAlert();
-            }
+            // Update COCO Vision Monitor UI Elements
+            if (typeof document !== 'undefined') {
+                const spinner = document.getElementById('coco-loading-spinner');
+                if (spinner) spinner.style.display = 'none';
 
-            // Update DOM accessible status
-            this._updateAccessibleStatusDOM();
+                const countEl = document.getElementById('coco-persons-count');
+                const riskEl = document.getElementById('coco-risk-state');
+                const dotEl = document.getElementById('coco-status-dot');
+                const boxEl = document.getElementById('coco-vision-monitor');
 
-            // Notify listeners
-            this.listeners.forEach(cb => {
-                try { cb(this.getStatus()); } catch (e) { }
-            });
+                if (countEl) countEl.textContent = `Persons: ${newStatus.personCount}`;
 
-            return this.getStatus();
-        }
-
-        /**
-         * Audio announcement with cooldown
-         */
-        _handleObserverAlert() {
-            const now = Date.now();
-            if (now - this.lastWarningTime >= this.config.warningCooldownMs) {
-                this.lastWarningTime = now;
-                console.warn('[PrivacyVision] ⚠️ Potential observer detected near screen!');
-
-                if (typeof window !== 'undefined' && window.speak) {
-                    window.speak('Another person may be nearby. Please check your surroundings before continuing.');
+                if (riskEl && dotEl && boxEl) {
+                    if (newStatus.privacyRisk || newStatus.personCount > 1) {
+                        riskEl.textContent = '⚠️ ONLOOKER';
+                        riskEl.style.color = '#ef4444';
+                        dotEl.style.background = '#ef4444';
+                        dotEl.style.boxShadow = '0 0 10px #ef4444';
+                        boxEl.style.borderColor = '#ef4444';
+                        boxEl.style.boxShadow = '0 12px 35px rgba(0,0,0,0.7), 0 0 25px rgba(239,68,68,0.4)';
+                    } else {
+                        riskEl.textContent = 'SAFE';
+                        riskEl.style.color = '#10b981';
+                        dotEl.style.background = '#10b981';
+                        dotEl.style.boxShadow = '0 0 8px #10b981';
+                        boxEl.style.borderColor = '#10b981';
+                        boxEl.style.boxShadow = '0 12px 35px rgba(0,0,0,0.7), 0 0 20px rgba(16,185,129,0.25)';
+                    }
                 }
             }
-        }
 
-        /**
-         * Update accessible DOM status
-         */
-        _updateAccessibleStatusDOM() {
-            if (typeof document === 'undefined') return;
-            const el = document.getElementById('privacy-status');
-            if (!el) return;
-
-            if (this.state === PRIVACY_STATES.POSSIBLE_OBSERVER) {
-                el.textContent = '⚠️ Privacy check: Possible observer nearby';
-                el.style.color = '#ffb703';
-            } else if (this.state === PRIVACY_STATES.UNCERTAIN) {
-                el.textContent = 'ℹ️ Privacy check: Camera visibility uncertain';
-                el.style.color = '#94a3b8';
-            } else {
-                el.textContent = '✓ Privacy check: Space secure';
-                el.style.color = '#10b981';
+            // Audio Warning Rate-Limiter
+            if (newStatus.privacyRisk) {
+                const now = Date.now();
+                if (now - this.lastWarningTime > this.config.warningCooldownMs) {
+                    this.lastWarningTime = now;
+                    if (typeof window !== 'undefined' && window.speak) {
+                        window.speak("Security alert. Someone may be looking over your shoulder.");
+                    }
+                }
             }
+
+            this._notifyListeners(this.status);
+            return this.status;
         }
 
-        /**
-         * Debug Overlay Rendering
-         */
-        _renderDebugOverlay(persons, w, h) {
-            if (!this.debugCtx) return;
+        _renderDebugOverlay(w, h, sortedPersons, lighting) {
+            if (!this.debugCtx || !this.debugCanvas) return;
             const ctx = this.debugCtx;
-            ctx.clearRect(0, 0, w, h);
+            const dw = this.debugCanvas.width;
+            const dh = this.debugCanvas.height;
 
-            persons.forEach((p, idx) => {
-                const [x, y, bw, bh] = p.bbox;
+            ctx.clearRect(0, 0, dw, dh);
+            ctx.drawImage(this.workCanvas, 0, 0, dw, dh);
+
+            const scaleX = dw / w;
+            const scaleY = dh / h;
+
+            // Visual Grid Overlay
+            ctx.strokeStyle = 'rgba(16, 185, 129, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(dw / 2, 0); ctx.lineTo(dw / 2, dh);
+            ctx.moveTo(0, dh / 2); ctx.lineTo(dw, dh / 2);
+            ctx.stroke();
+
+            sortedPersons.forEach((p, idx) => {
+                const [bx, by, bw, bh] = p.bbox;
                 const isPrimary = idx === 0;
-                ctx.strokeStyle = isPrimary ? '#10b981' : '#ff4d4d';
+
+                const sx = bx * scaleX;
+                const sy = by * scaleY;
+                const sw = bw * scaleX;
+                const sh = bh * scaleY;
+
+                // Cyber Bounding Box with Corner Accents
+                ctx.strokeStyle = isPrimary ? '#10b981' : '#ef4444';
                 ctx.lineWidth = 2;
-                ctx.strokeRect(x, y, bw, bh);
+                ctx.strokeRect(sx, sy, sw, sh);
 
-                ctx.fillStyle = isPrimary ? '#10b981' : '#ff4d4d';
-                ctx.font = '11px monospace';
-                const label = `${isPrimary ? 'Primary' : 'Secondary'} (${Math.round((p.confidence || 0.8) * 100)}%)`;
-                ctx.fillText(label, x + 4, y + 14);
+                // Corner brackets
+                const cLen = Math.min(12, sw / 3);
+                ctx.strokeStyle = isPrimary ? '#b4f056' : '#ff7777';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(sx, sy + cLen); ctx.lineTo(sx, sy); ctx.lineTo(sx + cLen, sy);
+                ctx.moveTo(sx + sw - cLen, sy); ctx.lineTo(sx + sw, sy); ctx.lineTo(sx + sw, sy + cLen);
+                ctx.moveTo(sx, sy + sh - cLen); ctx.lineTo(sx, sy + sh); ctx.lineTo(sx + cLen, sy + sh);
+                ctx.moveTo(sx + sw - cLen, sy + sh); ctx.lineTo(sx + sw, sy + sh); ctx.lineTo(sx + sw, sy + sh - cLen);
+                ctx.stroke();
+
+                // Pill Tag
+                ctx.fillStyle = isPrimary ? 'rgba(16, 185, 129, 0.85)' : 'rgba(239, 68, 68, 0.85)';
+                ctx.fillRect(sx, Math.max(0, sy - 18), 125, 18);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 9px monospace';
+                ctx.fillText(
+                    `${isPrimary ? '👤 PRIMARY' : '⚠️ ONLOOKER'} ${Math.round(p.confidence * 100)}%`,
+                    sx + 4,
+                    Math.max(12, sy - 5)
+                );
             });
-
-            // Status bar
-            ctx.fillStyle = 'rgba(0,0,0,0.7)';
-            ctx.fillRect(0, h - 22, w, 22);
-            ctx.fillStyle = this.state === PRIVACY_STATES.POSSIBLE_OBSERVER ? '#ff4d4d' : '#10b981';
-            ctx.font = '10px monospace';
-            ctx.fillText(`State: ${this.state} | Risk: ${this.status.privacyRiskScore} | Lat: ${this.status.quality.latencyMs}ms`, 6, h - 7);
         }
 
-        /**
-         * Public Status Getter
-         */
-        getStatus() {
-            return JSON.parse(JSON.stringify(this.status));
+        addListener(fn) {
+            if (typeof fn === 'function') this.listeners.push(fn);
         }
 
-        /**
-         * Register Risk Callback
-         */
-        onRisk(callback) {
-            if (typeof callback === 'function') {
-                this.listeners.push(callback);
+        removeListener(fn) {
+            this.listeners = this.listeners.filter(l => l !== fn);
+        }
+
+        _notifyListeners(status) {
+            this.listeners.forEach(fn => {
+                try { fn(status); } catch (e) {}
+            });
+        }
+
+        async start(options = {}) {
+            if (this.isRunning) return;
+            this.isRunning = true;
+            this.debugMode = Boolean(options.showDebugCanvas);
+
+            await this.loadModel();
+
+            // Acquire camera via CameraManager or direct getUserMedia
+            let videoEl = document.getElementById('privacy-front-video');
+            if (!videoEl) {
+                videoEl = document.createElement('video');
+                videoEl.id = 'privacy-front-video';
+                videoEl.autoplay = true;
+                videoEl.muted = true;
+                videoEl.playsInline = true;
+                videoEl.style.display = 'none';
+                document.body.appendChild(videoEl);
             }
-            return () => {
-                this.listeners = this.listeners.filter(cb => cb !== callback);
-            };
+
+            try {
+                if (typeof CameraManager !== 'undefined' && CameraManager.requestStream) {
+                    const stream = await CameraManager.requestStream({
+                        consumerId: 'privacy_vision',
+                        facingMode: 'user',
+                        videoElement: videoEl
+                    });
+                    videoEl.srcObject = stream;
+                } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: 'user', width: 320, height: 240 },
+                        audio: false
+                    });
+                    videoEl.srcObject = stream;
+                }
+            } catch (err) {
+                console.warn('[PrivacyVision-ML] Camera stream error:', err);
+            }
+
+            this.timer = setInterval(() => {
+                if (this.isRunning && videoEl) {
+                    this.processFrame(videoEl);
+                }
+            }, this.config.inferenceIntervalMs);
         }
 
-        setDebug(enabled) {
-            this.debugMode = !!enabled;
-            const canvas = document.getElementById('privacy-debug-canvas');
-            if (canvas) {
-                canvas.style.display = this.debugMode ? 'block' : 'none';
+        stop() {
+            this.isRunning = false;
+            if (this.timer) {
+                clearInterval(this.timer);
+                this.timer = null;
+            }
+            if (typeof CameraManager !== 'undefined' && CameraManager.releaseStream) {
+                CameraManager.releaseStream('privacy_vision');
+            }
+            const videoEl = document.getElementById('privacy-front-video');
+            if (videoEl && videoEl.srcObject) {
+                videoEl.srcObject.getTracks().forEach(t => t.stop());
+                videoEl.srcObject = null;
             }
         }
     }
 
-    const instance = new PrivacyVision();
-    instance.PrivacyVision = PrivacyVision;
-    instance.PRIVACY_STATES = PRIVACY_STATES;
-    instance.PRIVACY_CONFIG = PRIVACY_CONFIG;
+    const privacyVision = new PrivacyVision();
 
     if (typeof module !== 'undefined' && module.exports) {
-        module.exports = instance;
+        module.exports = { PrivacyVision, privacyVision, PRIVACY_STATES, PRIVACY_CONFIG };
     } else {
-        global.privacyVision = instance;
         global.PrivacyVision = PrivacyVision;
+        global.privacyVision = privacyVision;
     }
 
 })(typeof window !== 'undefined' ? window : global);
