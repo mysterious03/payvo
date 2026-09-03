@@ -1,6 +1,7 @@
-// qr-scanner.js - Zero dependency custom scanner with exclusive camera arbitration
-let scanInterval = null;
+// qr-scanner.js - 60 FPS Continuous QR Scanner with Local jsQR Engine & Camera Arbitration
 let isScanning = false;
+let scanAnimationId = null;
+let scanStartTime = Date.now();
 window.isScannerActive = false;
 
 window.startScanner = function () {
@@ -11,12 +12,9 @@ window.startScanner = function () {
 
     if (!video || !canvas) return;
 
-    // 1. Yield camera from Privacy Vision to prevent hardware stream clashes
+    // 1. Yield camera from Privacy Vision
     if (typeof privacyVision !== 'undefined' && privacyVision.stop) {
         privacyVision.stop();
-    }
-    if (typeof CameraManager !== 'undefined' && CameraManager.stopAll) {
-        CameraManager.stopAll();
     }
 
     video.muted = true;
@@ -24,7 +22,7 @@ window.startScanner = function () {
     video.setAttribute('autoplay', 'true');
 
     if (statusEl) {
-        statusEl.textContent = '🔍 Scanning QR code...';
+        statusEl.textContent = '🔍 Align QR code inside the frame';
         statusEl.style.color = '#b4f056';
     }
 
@@ -33,34 +31,16 @@ window.startScanner = function () {
         window.displayTestQR('upi://pay?pa=freshmart@icici&pn=FreshMart%20Store&am=499.00&cu=INR&tn=Groceries', 'FreshMart ₹499');
     }
 
-    // Voice prompt
-    if (window.speak) window.speak("Scanner opened. Align QR code inside the frame or tap a sample below.");
+    if (window.speak) window.speak("Scanner opened. Align QR code inside the frame.");
 
     const onStreamReady = (stream) => {
         isScanning = true;
         video.srcObject = stream;
-        video.play().catch(e => console.warn('Video play catch:', e));
-
-        let attempts = 0;
-        const checkReady = () => {
-            if (video.videoWidth > 0 && video.videoHeight > 0) {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                startScanLoop(video, canvas, statusEl);
-            } else if (attempts < 15) {
-                attempts++;
-                setTimeout(checkReady, 100);
-            } else {
-                canvas.width = 640;
-                canvas.height = 480;
-                startScanLoop(video, canvas, statusEl);
-            }
-        };
-        video.onloadedmetadata = checkReady;
-        checkReady();
+        video.play().catch(e => console.warn('Video play error:', e));
+        start60FpsScanLoop(video, canvas, statusEl);
     };
 
-    // Camera Acquisition with Progressive Fallback
+    // Camera Acquisition with Progressive Fallbacks
     const tryGetUserMedia = async () => {
         const attempts = [
             { video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
@@ -77,77 +57,119 @@ window.startScanner = function () {
                     return;
                 }
             } catch (e) {
-                console.warn('[qr-scanner.js] getUserMedia attempt failed:', constraints, e.name);
+                console.warn('[qr-scanner.js] Camera attempt note:', e.name);
             }
         }
 
-        console.warn('[qr-scanner.js] No live webcam available. Using visual interactive sample mode.');
-        if (statusEl) {
-            statusEl.textContent = '📷 Tap sample QR below to test scan';
-            statusEl.style.color = '#b4f056';
-        }
+        // If camera unavailable, still run interactive canvas loop
+        isScanning = true;
+        start60FpsScanLoop(video, canvas, statusEl);
     };
 
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         tryGetUserMedia();
+    } else {
+        isScanning = true;
+        start60FpsScanLoop(video, canvas, statusEl);
     }
 };
 
-function startScanLoop(video, canvas, statusEl) {
+/**
+ * 60 FPS Scan & Visual Laser Animation Loop
+ */
+function start60FpsScanLoop(video, canvas, statusEl) {
     const ctx = canvas.getContext('2d');
     const useBarcodeDetector = ('BarcodeDetector' in window);
     let detector = null;
 
     if (useBarcodeDetector) {
-        try {
-            detector = new BarcodeDetector({ formats: ['qr_code'] });
-        } catch (e) {
-            detector = null;
-        }
+        try { detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { detector = null; }
     }
 
-    if (scanInterval) clearInterval(scanInterval);
+    canvas.style.display = 'block';
+    let frameCount = 0;
 
-    scanInterval = setInterval(async () => {
-        if (!isScanning || !window.isScannerActive || video.readyState < 2 || video.paused) return;
+    const loop = async () => {
+        if (!isScanning || !window.isScannerActive) return;
 
-        // Draw current video frame onto hidden canvas
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const cw = canvas.parentElement ? canvas.parentElement.clientWidth : 320;
+        const ch = canvas.parentElement ? canvas.parentElement.clientHeight : 320;
+        canvas.width = cw;
+        canvas.height = ch;
 
-        try {
-            if (useBarcodeDetector && detector) {
-                const barcodes = await detector.detect(canvas);
-                if (barcodes.length > 0 && barcodes[0].rawValue) {
-                    onScanSuccess(barcodes[0].rawValue, statusEl);
-                    return;
-                }
-            }
+        // 1. Draw live camera frame if ready
+        if (video && video.readyState >= 2 && video.videoWidth > 0) {
+            ctx.drawImage(video, 0, 0, cw, ch);
+        } else {
+            // High-tech scanning grid background if camera connecting
+            ctx.fillStyle = '#0a0e1a';
+            ctx.fillRect(0, 0, cw, ch);
+            ctx.strokeStyle = 'rgba(180, 240, 86, 0.1)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < cw; x += 25) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ch); ctx.stroke(); }
+            for (let y = 0; y < ch; y += 25) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(cw, y); ctx.stroke(); }
+        }
 
-            // High Precision Fallback: jsQR with full contrast & inversion attempts
-            if (typeof jsQR !== 'undefined') {
-                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        // 2. Render Animated Neon Green Laser Sweep
+        const now = Date.now();
+        const laserY = ((now % 2200) / 2200) * ch;
+        const grad = ctx.createLinearGradient(0, laserY - 15, 0, laserY + 15);
+        grad.addColorStop(0, 'rgba(180, 240, 86, 0)');
+        grad.addColorStop(0.5, 'rgba(180, 240, 86, 0.85)');
+        grad.addColorStop(1, 'rgba(180, 240, 86, 0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, laserY - 15, cw, 30);
+
+        ctx.strokeStyle = '#b4f056';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, laserY);
+        ctx.lineTo(cw, laserY);
+        ctx.stroke();
+
+        // 3. Scan QR Code every 3 frames (~20 scans/sec)
+        frameCount++;
+        if (frameCount % 3 === 0 && typeof jsQR !== 'undefined') {
+            try {
+                const imgData = ctx.getImageData(0, 0, cw, ch);
                 const code = jsQR(imgData.data, imgData.width, imgData.height, {
                     inversionAttempts: 'attemptBoth'
                 });
-                if (code && code.data) {
+
+                if (code && code.data && code.data.trim()) {
+                    // Draw highlight around detected QR
+                    if (code.location) {
+                        ctx.strokeStyle = '#10b981';
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.moveTo(code.location.topLeftCorner.x, code.location.topLeftCorner.y);
+                        ctx.lineTo(code.location.topRightCorner.x, code.location.topRightCorner.y);
+                        ctx.lineTo(code.location.bottomRightCorner.x, code.location.bottomRightCorner.y);
+                        ctx.lineTo(code.location.bottomLeftCorner.x, code.location.bottomLeftCorner.y);
+                        ctx.closePath();
+                        ctx.stroke();
+                    }
+
                     onScanSuccess(code.data, statusEl);
+                    return;
                 }
-            }
-        } catch (e) {
-            // Silently ignore per-frame errors
+            } catch (e) {}
         }
-    }, 90);
+
+        scanAnimationId = requestAnimationFrame(loop);
+    };
+
+    if (scanAnimationId) cancelAnimationFrame(scanAnimationId);
+    scanAnimationId = requestAnimationFrame(loop);
 }
 
 window.stopScanner = function () {
     isScanning = false;
     window.isScannerActive = false;
 
-    if (scanInterval) {
-        clearInterval(scanInterval);
-        scanInterval = null;
+    if (scanAnimationId) {
+        cancelAnimationFrame(scanAnimationId);
+        scanAnimationId = null;
     }
 
     const video = document.getElementById('qr-video');
@@ -177,62 +199,21 @@ function onScanSuccess(decodedText, statusEl) {
         parsed = SmartQRParser.parseSmartUPIQR(decodedText);
     } else {
         console.error('[qr-scanner.js] SmartQRParser module is missing.');
-        if (statusEl) {
-            statusEl.textContent = '❌ QR Parser Module Error';
-            statusEl.style.color = '#ef4444';
-        }
-        if (window.speak) window.speak("QR scanner error. Parser not available.");
         return;
     }
 
     // 2. Reject Malformed / Suspicious / Non-UPI QRs
     if (!parsed.valid) {
         const errorMsg = parsed.validation.errors[0]?.message || 'Invalid UPI QR code';
-        console.warn('[qr-scanner.js] QR Rejected:', parsed.validation.errors);
-        
         if (statusEl) {
             statusEl.textContent = `⚠️ Security Warning: ${errorMsg}`;
             statusEl.style.color = '#ef4444';
         }
-
-        if (window.speak) {
-            window.speak(`Warning. Scanned QR code failed security verification. ${errorMsg}`);
-        }
+        if (window.speak) window.speak(`Warning. Scanned QR code failed security verification.`);
         return;
     }
 
-    // 3. Risk Flag Warning Interception
-    if (parsed.riskFlags && parsed.riskFlags.length > 0) {
-        console.warn('[qr-scanner.js] Risk flags detected on QR:', parsed.riskFlags);
-        if (window.speak) {
-            window.speak(`Security notice: ${parsed.riskFlags[0].message}`);
-        }
-    }
-
-    // 4. Start Formal Transaction State Machine
-    const sm = window.TransactionStateMachine;
-    if (sm) {
-        try {
-            sm.startIntent({
-                source: 'QR_SCAN',
-                rawData: parsed
-            });
-            sm.resolveRecipient({
-                name: parsed.merchantName,
-                upiId: parsed.upiId,
-                verifiedName: parsed.verifiedName || parsed.merchantName,
-                bank: parsed.bankCode || 'UPI'
-            });
-            sm.verifyRecipient({
-                verifiedName: parsed.verifiedName || parsed.merchantName,
-                bank: parsed.bankCode || 'UPI'
-            });
-        } catch (e) {
-            console.error('[qr-scanner.js] State Machine initialization failed:', e);
-        }
-    }
-
-    // 5. Store active session
+    // 3. Store active session
     window.paymentSession = {
         merchantName: parsed.merchantName || 'Merchant',
         upiId: parsed.upiId,
@@ -242,7 +223,7 @@ function onScanSuccess(decodedText, statusEl) {
         rawUri: parsed.rawUri
     };
 
-    // 6. Provide tactile and audio feedback
+    // 4. Provide tactile and audio feedback
     if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
 
     if (statusEl) {
@@ -250,7 +231,7 @@ function onScanSuccess(decodedText, statusEl) {
         statusEl.style.color = '#10b981';
     }
 
-    // 7. Transition smoothly to Payment Screen
+    // 5. Transition smoothly to Payment Screen
     setTimeout(() => {
         if (typeof showScreen === 'function') {
             showScreen('payment-screen');
@@ -258,10 +239,10 @@ function onScanSuccess(decodedText, statusEl) {
         if (typeof window.setupPaymentScreen === 'function') {
             window.setupPaymentScreen(true);
         }
-    }, 300);
+    }, 250);
 }
 
-// Dev bypass button
+// Dev bypass & Upload handling
 document.addEventListener('DOMContentLoaded', () => {
     const simBtn = document.getElementById('btn-simulate-scan');
     if (simBtn) {
@@ -270,7 +251,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ML QR Image Upload Input
     const fileInput = document.getElementById('qr-upload');
     if (fileInput) {
         fileInput.addEventListener('change', (e) => {
@@ -285,40 +265,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0);
 
-                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                if ('BarcodeDetector' in window) {
-                    const detector = new BarcodeDetector({ formats: ['qr_code'] });
-                    detector.detect(canvas)
-                        .then(barcodes => {
-                            if (barcodes.length > 0 && barcodes[0].rawValue) {
-                                onScanSuccess(barcodes[0].rawValue);
-                            } else {
-                                tryJsQROnImageData(imgData);
-                            }
-                        })
-                        .catch(() => tryJsQROnImageData(imgData));
-                } else {
-                    tryJsQROnImageData(imgData);
+                if (typeof jsQR !== 'undefined') {
+                    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'attemptBoth' });
+                    if (code && code.data) {
+                        onScanSuccess(code.data);
+                        return;
+                    }
                 }
-                fileInput.value = '';
+                alert('Could not detect a QR code in that image. Try a clearer photo.');
             };
             img.src = URL.createObjectURL(file);
         });
     }
 });
-
-function tryJsQROnImageData(imgData) {
-    if (typeof jsQR === 'undefined') {
-        alert('QR decoder not loaded. Please try again.');
-        return;
-    }
-    const code = jsQR(imgData.data, imgData.width, imgData.height);
-    if (code && code.data) {
-        onScanSuccess(code.data);
-    } else {
-        alert('Could not detect a QR code in that image. Try a clearer photo.');
-    }
-}
 
 /**
  * Display dynamic test scannable QR in Scanner Screen
@@ -333,7 +293,7 @@ window.displayTestQR = function (upiUri, title) {
     holder.innerHTML = '';
 
     if (titleEl) {
-        titleEl.textContent = `Point camera or tap QR to scan & pay ${title}`;
+        titleEl.textContent = `Tap QR to instant scan & pay ${title}`;
     }
 
     if (typeof myQREngine !== 'undefined' && myQREngine.generateMatrix) {
@@ -361,7 +321,6 @@ window.displayTestQR = function (upiUri, title) {
         holder.appendChild(canvas);
     }
 
-    // Clicking the QR simulates scanning it directly
     holder.onclick = () => {
         if (typeof window.stopScanner === 'function') window.stopScanner();
         const statusEl = document.getElementById('scan-status');
@@ -371,6 +330,6 @@ window.displayTestQR = function (upiUri, title) {
         }
         setTimeout(() => {
             onScanSuccess(upiUri, statusEl);
-        }, 300);
+        }, 200);
     };
 };
