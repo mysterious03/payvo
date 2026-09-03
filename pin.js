@@ -31,8 +31,14 @@ window.showPinScreen = function () {
     if (!ps) return;
 
     enteredPin = '';
-    ps.style.display = 'block';
-    document.getElementById('main-nav').style.display = 'none';
+    if (typeof showScreen === 'function') {
+        showScreen('pin-screen');
+    } else {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        ps.classList.add('active');
+    }
+    const nav = document.getElementById('main-nav');
+    if (nav) nav.style.display = 'none';
 
     updatePinUI();
     hideConfirmBtns();
@@ -41,6 +47,10 @@ window.showPinScreen = function () {
     setInstruction(`Enter digit <b>1</b> of ${PIN_LENGTH}<br><span style="font-size:11px;opacity:0.6;">Draw the number anywhere on screen. Wait 1s to confirm.</span>`);
     initCanvasArea();
     loadMnistModel();
+
+    if (window.speak) {
+        window.speak("Enter your 4 digit PIN by drawing each digit on screen.");
+    }
 };
 
 function initCanvasArea() {
