@@ -19,6 +19,9 @@
         // Reset and start new Intent in State Machine
         if (sm) {
             try {
+                if (typeof sm.reset === 'function' && sm.getState() !== 'IDLE') {
+                    sm.reset();
+                }
                 sm.startIntent({
                     source: fromScan ? 'QR' : (sess.source || 'MANUAL'),
                     rawData: { ...sess }
