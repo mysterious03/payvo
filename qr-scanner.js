@@ -245,7 +245,7 @@ function onScanSuccess(decodedText, statusEl) {
 
     // 2. Reject Malformed / Suspicious / Non-UPI QRs
     if (!parsed.valid) {
-        const errorMsg = parsed.validation.errors[0]?.message || 'Invalid UPI QR code';
+        const errorMsg = parsed.validation?.errors?.[0]?.message || 'Invalid UPI QR code';
         if (statusEl) {
             statusEl.textContent = `⚠️ Security Warning: ${errorMsg}`;
             statusEl.style.color = '#ef4444';
@@ -254,21 +254,29 @@ function onScanSuccess(decodedText, statusEl) {
         return;
     }
 
-    // 3. Store active session
+    // 3. Store active session safely
+    const norm = parsed.normalized || {};
+    const merchantName = norm.recipientName || parsed.recipient?.name || 'Merchant';
+    const upiId = norm.recipientUpiId || parsed.recipient?.upiId || 'scanned@upi';
+    const amountNum = (norm.amount !== null && norm.amount !== undefined) ? norm.amount : (parsed.amount?.value !== null ? parsed.amount?.value : null);
+    const amountFixed = Boolean(norm.amountFixed || parsed.amount?.fixed);
+
     window.paymentSession = {
-        merchantName: parsed.merchantName || 'Merchant',
-        upiId: parsed.upiId,
-        amount: parsed.amount ? parsed.amount.toFixed(2) : '',
-        amountFixed: parsed.amountFixed || Boolean(parsed.amount),
+        merchantName: merchantName,
+        upiId: upiId,
+        amount: (amountNum !== null && amountNum !== undefined && !isNaN(amountNum)) ? parseFloat(amountNum).toFixed(2) : '',
+        amountFixed: amountFixed,
         source: 'QR_SCAN',
-        rawUri: parsed.rawUri
+        rawUri: decodedText
     };
+
+    console.log('[qr-scanner.js] ✓ Payment Session Initialized:', window.paymentSession);
 
     // 4. Provide tactile and audio feedback
     if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
 
     if (statusEl) {
-        statusEl.textContent = `✓ Scanned: ${parsed.merchantName || parsed.upiId}`;
+        statusEl.textContent = `✓ Scanned: ${merchantName} (₹${window.paymentSession.amount || 'Open'})`;
         statusEl.style.color = '#10b981';
     }
 
@@ -280,7 +288,7 @@ function onScanSuccess(decodedText, statusEl) {
         if (typeof window.setupPaymentScreen === 'function') {
             window.setupPaymentScreen(true);
         }
-    }, 200);
+    }, 150);
 }
 
 // Dev bypass & Upload handling
