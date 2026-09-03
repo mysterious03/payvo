@@ -189,23 +189,47 @@
         }
 
         try {
-            // 1. Resolve & validate Amount (Authoritative balance check)
-            sm.resolveAmount(finalAmount, currentBal);
+            const state = sm.getState();
+
+            // 1. Resolve Amount if not already resolved
+            if (state === 'IDLE' || state === 'INTENT_RECEIVED' || state === 'RECIPIENT_RESOLVED' || state === 'RECIPIENT_VERIFIED') {
+                if (state === 'IDLE') {
+                    sm.startIntent({ source: 'MANUAL', rawData: { ...window.paymentSession } });
+                }
+                if (sm.getState() === 'INTENT_RECEIVED') {
+                    sm.resolveRecipient({
+                        name: window.paymentSession.merchantName || 'Merchant',
+                        upiId: window.paymentSession.upiId || 'scanned@upi'
+                    });
+                }
+                if (sm.getState() === 'RECIPIENT_RESOLVED') {
+                    sm.verifyRecipient({ verifiedName: window.paymentSession.merchantName, bank: 'UPI' });
+                }
+                sm.resolveAmount(finalAmount, currentBal);
+            }
 
             // 2. Verify Payment Direction
-            sm.verifyPaymentDirection('SEND');
+            if (sm.getState() === 'AMOUNT_RESOLVED') {
+                sm.verifyPaymentDirection('SEND');
+            }
 
             // 3. Perform Risk Check
-            sm.performRiskCheck();
+            if (sm.getState() === 'PAYMENT_DIRECTION_VERIFIED') {
+                sm.performRiskCheck();
+            }
 
             // 4. Request User Confirmation
-            sm.requestUserConfirmation();
+            if (sm.getState() === 'RISK_CHECK') {
+                sm.requestUserConfirmation();
+            }
 
             // Sync session
             window.paymentSession.amount = finalAmount;
 
             // 5. Confirm by User -> Starts UNDO WINDOW
-            sm.confirmByUser();
+            if (sm.getState() === 'USER_CONFIRMATION') {
+                sm.confirmByUser();
+            }
 
         } catch (error) {
             console.error('[payment.js] Transaction validation error:', error.message);

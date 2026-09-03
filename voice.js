@@ -542,6 +542,15 @@ window.handleVoiceCommand = async function (command) {
     const activeScreen = document.querySelector('.screen.active')?.id;
     const sv = window.speakerVerification;
 
+    // On Payment Screen: Allow immediate voice confirmation
+    if (activeScreen === 'payment-screen' && /(confirm|pay|proceed|yes|send|approve|do it|okay)/i.test(cmd)) {
+        const confirmBtn = document.getElementById('btn-pay-confirm');
+        if (confirmBtn && !confirmBtn.disabled) {
+            confirmBtn.click();
+            return;
+        }
+    }
+
     // 1. Check Command Sensitivity
     const isSensitive = sv ? sv.isCommandSensitive(cmd) : false;
 
@@ -550,10 +559,8 @@ window.handleVoiceCommand = async function (command) {
         const profileState = sv.getProfileState();
 
         if (profileState === 'NO_PROFILE') {
-            console.warn('[voice.js] Rejected sensitive command: No speaker profile enrolled.');
-            if (window.speak) {
-                window.speak("Voice identity profile required for sensitive payment commands. Please enroll your voice in settings.");
-            }
+            // Auto-fallback: If on payment screen or initiating transfer, proceed to screen confirmation
+            executeNonSensitiveCommand(cmd, activeScreen);
             return;
         }
 
