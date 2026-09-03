@@ -137,33 +137,33 @@
             }
 
             window.speak(promptText, () => {
-                if (!isFixedAmount) {
-                    const group = document.querySelector('.amount-input-group');
-                    if (group) {
-                        group.classList.add('voice-listening');
-                        let label = document.getElementById('voice-status-label');
-                        if (!label) {
-                            label = document.createElement('div');
-                            label.id = 'voice-status-label';
-                            label.innerHTML = '<span class="pulse-mic">🎤</span> Listening for amount...';
-                            label.style.cssText = 'position:absolute; bottom:-30px; left:0; right:0; text-align:center; color:#b4f056; font-size:12px; font-weight:bold; letter-spacing:1px;';
-                            group.style.position = 'relative';
-                            group.appendChild(label);
+                const group = document.querySelector('.amount-input-group');
+                if (group) {
+                    group.classList.add('voice-listening');
+                    let label = document.getElementById('voice-status-label');
+                    if (!label) {
+                        label = document.createElement('div');
+                        label.id = 'voice-status-label';
+                        label.innerHTML = isFixedAmount 
+                            ? '<span class="pulse-mic">🎤</span> Say "Continue" or "Pay" to confirm...'
+                            : '<span class="pulse-mic">🎤</span> Say amount (e.g. 500 rupees)...';
+                        label.style.cssText = 'position:absolute; bottom:-30px; left:0; right:0; text-align:center; color:#b4f056; font-size:12px; font-weight:bold; letter-spacing:1px;';
+                        group.style.position = 'relative';
+                        group.appendChild(label);
+                    }
+                }
+                if (typeof window.listenForAmount === 'function') {
+                    window.listenForAmount((amt) => {
+                        const label = document.getElementById('voice-status-label');
+                        if (label) label.remove();
+                        if (amountInput && (!isFixedAmount || amt !== parseFloat(amountInput.value))) {
+                            amountInput.value = amt;
+                            updateButtonState();
                         }
-                    }
-                    if (typeof window.listenForAmount === 'function') {
-                        window.listenForAmount((amt) => {
-                            const label = document.getElementById('voice-status-label');
-                            if (label) label.remove();
-                            if (amountInput) {
-                                amountInput.value = amt;
-                                updateButtonState();
-                            }
-                            window.speak(`Got it. ${amt} rupees.`, () => {
-                                confirmBtn?.click();
-                            });
+                        window.speak(`Proceeding with ${amountInput ? amountInput.value : amt} rupees.`, () => {
+                            confirmBtn?.click();
                         });
-                    }
+                    });
                 }
             });
         }

@@ -325,19 +325,33 @@ window.listenForAmount = function (onAmountReceived, onTimeout, onInterim) {
         if (onInterim) onInterim(currentText);
 
         const num = parseNumber(currentText);
+        const isContinueWord = /(continue|pay|proceed|confirm|yes|ok|okay|next|send|done)/i.test(currentText);
+
+        // Case 1: Spoken numeric amount detected
         if (num !== null && num > 0) {
-            // Finalize if the browser says it's final OR if we heard enough tokens
-            const isFinalInEvent = event.results[event.results.length - 1].isFinal;
-            
-            if (isFinalInEvent || currentText.split(' ').length >= 1) {
+            fired = true;
+            isDedicatedListening = false;
+            clearTimeout(timeoutHandle);
+            try { rec.abort(); } catch (e) { }
+            console.log('✅ Amount parsed from speech:', num);
+            onAmountReceived(num);
+            if (isVoiceEnabled && speechRec) setTimeout(() => { try { speechRec.start(); } catch (e) { } }, 500);
+            return;
+        }
+
+        // Case 2: User said "continue" / "pay" / "confirm" with an existing amount in the input field
+        if (isContinueWord) {
+            const inputEl = document.getElementById('pay-amount');
+            const existingAmt = parseFloat(inputEl ? inputEl.value : '0');
+            if (existingAmt && existingAmt > 0) {
                 fired = true;
                 isDedicatedListening = false;
                 clearTimeout(timeoutHandle);
                 try { rec.abort(); } catch (e) { }
-                console.log('✅ Amount parsed:', num);
-                onAmountReceived(num);
-                // Restart main recognizer after a delay
+                console.log('✅ Continue command with existing amount:', existingAmt);
+                onAmountReceived(existingAmt);
                 if (isVoiceEnabled && speechRec) setTimeout(() => { try { speechRec.start(); } catch (e) { } }, 500);
+                return;
             }
         }
     };
