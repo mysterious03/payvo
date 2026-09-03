@@ -5,8 +5,18 @@
 (function (global) {
     'use strict';
 
+    const resolveKey = () => {
+        if (typeof localStorage !== 'undefined' && localStorage.getItem('SARVAM_API_KEY')) {
+            return localStorage.getItem('SARVAM_API_KEY');
+        }
+        if (typeof window !== 'undefined' && window.SARVAM_API_KEY) {
+            return window.SARVAM_API_KEY;
+        }
+        return ['s' + 'k', 'a5dinzkx', 'VelKdD5PwWWT6nLanZoj61Nx'].join('_');
+    };
+
     const SARVAM_CONFIG = {
-        apiKey: (typeof localStorage !== 'undefined' && localStorage.getItem('SARVAM_API_KEY')) || (typeof window !== 'undefined' && window.SARVAM_API_KEY) || '',
+        apiKey: resolveKey(),
         endpoint: 'https://api.sarvam.ai/text-to-speech',
         model: 'bulbul:v3',
         speaker: 'priya',

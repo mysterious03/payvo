@@ -257,3 +257,44 @@ function tryJsQROnImageData(imgData) {
         alert('Could not detect a QR code in that image. Try a clearer photo.');
     }
 }
+
+/**
+ * Display dynamic test scannable QR in Scanner Screen
+ */
+window.displayTestQR = function (upiUri, title) {
+    const modal = document.getElementById('sample-qr-modal');
+    const holder = document.getElementById('sample-qr-canvas-holder');
+    const titleEl = document.getElementById('sample-qr-title');
+
+    if (!modal || !holder) return;
+    modal.style.display = 'flex';
+    holder.innerHTML = '';
+
+    if (titleEl) {
+        titleEl.textContent = `Point camera here or tap QR to pay ${title}`;
+    }
+
+    if (typeof QRCode !== 'undefined') {
+        new QRCode(holder, {
+            text: upiUri,
+            width: 158,
+            height: 158,
+            colorDark: '#000000',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+        });
+    }
+
+    // Clicking the QR also simulates scanning it directly
+    holder.onclick = () => {
+        if (typeof window.stopScanner === 'function') window.stopScanner();
+        const statusEl = document.getElementById('scan-status');
+        if (statusEl) {
+            statusEl.textContent = '✅ Scanned ' + title;
+            statusEl.style.color = '#b4f056';
+        }
+        setTimeout(() => {
+            onScanSuccess(upiUri, statusEl);
+        }, 300);
+    };
+};

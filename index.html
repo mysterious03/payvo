@@ -11,8 +11,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap"
         rel="stylesheet">
 
-    <!-- jsQR: tiny standalone library, no workers, no CORS issues -->
+    <!-- jsQR: tiny standalone library for reading QR -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <!-- QRCode.js for generating scannable QR codes -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <!-- TensorFlow.js for Draw-to-PIN & Privacy Vision -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
     <!-- COCO-SSD MobileNet model for on-device Person Detection -->
@@ -195,9 +197,27 @@
                     </button>
                 </div>
 
+                <!-- Interactive Scannable Sample Merchant QRs -->
+                <div style="width: 100%; margin-top: 18px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 18px; padding: 16px; text-align: center;">
+                    <p style="font-size: 11px; font-weight: 700; color: var(--accent-lime); text-transform: uppercase; margin-bottom: 10px;">
+                        🎯 Test Scannable Merchant QR Codes
+                    </p>
+                    <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px;">
+                        <button class="sample-chip" onclick="window.displayTestQR('upi://pay?pa=freshmart@icici&pn=FreshMart%20Store&am=499.00&cu=INR&tn=Groceries', 'FreshMart ₹499')">FreshMart ₹499</button>
+                        <button class="sample-chip" onclick="window.displayTestQR('upi://pay?pa=ramesh@upi&pn=Ramesh%20Kumar&am=250.00&cu=INR&tn=Dinner', 'Ramesh ₹250')">Ramesh ₹250</button>
+                        <button class="sample-chip" onclick="window.displayTestQR('upi://pay?pa=merchant.demo@okaxis&pn=SwiftPass%20Store&am=1200.00&cu=INR', 'Store ₹1,200')">Store ₹1200</button>
+                    </div>
+
+                    <!-- Visual Scannable QR Container -->
+                    <div id="sample-qr-modal" style="display: none; background: #ffffff; padding: 16px; border-radius: 16px; margin: 12px auto; width: 190px; height: 190px; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+                        <div id="sample-qr-canvas-holder" style="display:flex; align-items:center; justify-content:center;"></div>
+                    </div>
+                    <p id="sample-qr-title" style="font-size: 12px; color: var(--text-muted); font-weight: bold; margin-top: 4px;"></p>
+                </div>
+
                 <!-- Fallback Button -->
-                <button class="btn-black fallback-btn" id="btn-simulate-scan" style="margin-top: 16px;">
-                    [Dev] Simulate Successful Scan
+                <button class="btn-black fallback-btn" id="btn-simulate-scan" style="margin-top: 14px;">
+                    [Dev] Direct Simulate Successful Scan
                 </button>
             </div>
         </section>
